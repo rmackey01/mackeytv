@@ -5,7 +5,7 @@ const STOPS = [
   { kind: 'nr', label: 'New Releases', x: -HALFW + 1.3, z: 2.55, yaw: Math.PI / 2 },
   ...GENRES.flatMap((g, i) => {
     const a = { kind: 'aisle', ai: i, label: `Aisle ${i + 1} · ${g.name}`, x: aisleX(i), z: LANE_Z, yaw: 0 };
-    if (i === N - 1) return [a];
+    if (i === N - 1 || !CAPS[i]) return [a];
     return [a, { kind: 'cap', gi: i, label: 'Endcap', x: (aisleX(i) + aisleX(i + 1)) / 2, z: LANE_Z, yaw: 0 }];
   }),
   { kind: 'counter', label: 'Store Computer', x: PC.x, z: PC.z - 0.85, yaw: Math.PI }
@@ -128,7 +128,9 @@ function wallView(wi, r, c) {
 function setTarget(v) { target.x = v.x; target.z = v.z; target.yaw = state.yaw + angDiff(state.yaw, v.yaw); target.pitch = v.pitch; dirty = true; }
 
 // ---------- shelf mode ----------
+const EMPTY_MSG = 'Add movies at the store computer: MGR, then your PIN';
 function enterShelf(side) {
+  if (!planeIndex.has(`${ai}:${side}:0:0`)) { setCard(aisleLabel(ai), 'Nothing on this aisle yet', EMPTY_MSG); return; }
   mode = 'shelf'; renderStops(); cur.side = side;
   cur.g = Math.max(0, Math.min(TOTAL - 1, Math.round((SEG_START - Math.min(Z0 - 0.1, state.z - 0.4)) / TAPE_PITCH)));
   focusShelf();
@@ -146,7 +148,9 @@ function moveShelf(dRight, dUp) {
 function leaveShelf() { mode = 'aisle'; setTimeout(renderStops, 0); clearHighlight(); card.hidden = true; setTarget({ x: aisleX(ai), z: state.z, yaw: 0, pitch: -0.06 }); }
 
 // ---------- wall mode (face-out displays) ----------
-function enterWall(wi) { mode = 'wall'; renderStops(); wcur.wall = wi; focusWall(); }
+function enterWall(wi) {
+  if (!walls[wi].cells[0] || !walls[wi].cells[0].length) { setCard(walls[wi].name, 'Nothing here yet', EMPTY_MSG); return; }
+  mode = 'wall'; renderStops(); wcur.wall = wi; focusWall(); }
 function focusWall() {
   const w = walls[wcur.wall], cell = wallCell(wcur.wall, wcur.r, wcur.c);
   showWallCell(wcur.wall, wcur.r, wcur.c); setTarget(wallView(wcur.wall, wcur.r, wcur.c));
@@ -175,6 +179,7 @@ function showPoster(p) {
   g.position.set(p.x, p.y, p.z); scene.add(g); hl = g; dirty = true;
 }
 function enterPoster(a, k) {
+  if (!posterOf(a, k)) return;
   mode = 'poster'; pcur.ai = a; pcur.k = k; renderStops();
   const p = posterOf(a, k); showPoster(p); setTarget(posterView(p));
   setCard(`${aisleLabel(a)} \u00b7 ON THE WALL`, p.tape.title, tapeMeta(p.tape));

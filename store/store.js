@@ -13,10 +13,10 @@ const NEW = ['Paddington 2', 'The King of Kings', 'Ordinary Angels', 'Unsung Her
 const STARTER = [];
 GENRES.forEach((g) => g.titles.forEach((t) => STARTER.push({ title: t.replace(/’/g, "'"), genre: g.name })));
 NEW.forEach((t) => { const tt = t.replace(/’/g, "'"); if (!STARTER.some((x) => x.title === tt)) STARTER.push({ title: tt }); });
-GENRES.forEach((g) => { const real = CAT.filter((t) => t.genre === g.name); g.real = real.length > 0; if (g.real) g.titles = real; });
+GENRES.forEach((g) => { g.titles = CAT.filter((t) => t.genre === g.name); g.real = true; });
 {
   const real = CAT.slice().sort((a, b) => (b.year || 0) - (a.year || 0) || String(b.approved_at).localeCompare(String(a.approved_at)));
-  if (real.length) NEW.splice(0, NEW.length, ...real.slice(0, 40));
+  NEW.splice(0, NEW.length, ...real.slice(0, 40));
 }
 
 // ---------- renderer ----------
@@ -163,6 +163,7 @@ sPlane(HALFW * 2, CEIL, wallMat, 'room', 0, CEIL / 2, BACKWALL);
 // ---------- spines ----------
 function buildPool(titles, count, inOrder) {
   const pool = [];
+  if (!titles.length) return pool;
   for (let p = 0; p < count; p++) {
     const c = makeCanvas(CAN_W, CAN_H), x = c.getContext('2d');
     const tapes = [];
@@ -193,7 +194,7 @@ function shelfFace(ai, side, pool) {
     const y = ROW0 + r * ROW_STEP;
     sBox(UNIT_D - 0.01, 0.022, inner, woodMat, region, f + side * UNIT_D / 2, y - 0.011, cz);
     sBox(0.012, 0.035, inner, woodMat, region, f + side * 0.006, y - 0.004, cz);
-    for (let k = 0; k < SEGS; k++) {
+    for (let k = 0; k < SEGS && pool.length; k++) {
       const zc = SEG_START - SEG_LEN / 2 - k * SEG_STEP;
       sBox(TAPE_D, TAPE_H, SEG_LEN, tapeBody, region, f + side * (0.012 + TAPE_D / 2), y + TAPE_H / 2, zc);
       const seg = (side < 0 ? 0 : ROWS * SEGS) + r * SEGS + k;   // every segment on the aisle, in reading order
@@ -217,7 +218,7 @@ function shelfFace(ai, side, pool) {
   sPlane(len, 0.26, new THREE.MeshBasicMaterial({ map: canvasTexture(c) }), region, f - side * 0.002, 2.2, cz, ry, 0, 1, 1);
 }
 // real aisles: titles in A-Z order across the shelves, repeating like extra copies when there's room
-const pools = GENRES.map((g) => g.real ? buildPool(g.titles, Math.min(ROWS * SEGS * 2, Math.max(3, Math.ceil(g.titles.length / PER_SEG))), true) : buildPool(g.titles, 3));
+const pools = GENRES.map((g) => buildPool(g.titles, Math.min(ROWS * SEGS * 2, Math.max(3, Math.ceil(g.titles.length / PER_SEG))), true));
 GENRES.forEach((g, i) => { shelfFace(i, -1, pools[i]); shelfFace(i, 1, pools[i]); });
 
 // ---------- glow + neon (unlit, few draw calls) ----------
@@ -305,7 +306,7 @@ function faceOutWall(name, titles, cols, rows, pos, ry) {
     sBox(width + 0.1, 0.02, 0.09, woodMat, 'wall', 0, y - 0.01, 0.045, null, M);
     sBox(width + 0.1, 0.04, 0.012, woodMat, 'wall', 0, y + 0.01, 0.09, null, M);
     cells.push([]);
-    for (let c = 0; c < cols; c++) {
+    for (let c = 0; c < cols && titles.length; c++) {
       const idx = r * cols + c;
       const t = makeTape(titles[idx % titles.length]);
       const lx = -width / 2 + sx / 2 + c * sx;
@@ -325,7 +326,7 @@ function faceOutWall(name, titles, cols, rows, pos, ry) {
   }
   const pick = new THREE.Mesh(new THREE.PlaneGeometry(width, rows * sy), pickMat);
   pick.position.set(0, y0 - 0.05 + rows * sy / 2, 0.08);
-  grp.add(pick); pick.userData = { kind: 'wall', wall: walls.length };
+  if (titles.length) { grp.add(pick); pick.userData = { kind: 'wall', wall: walls.length }; }
   pickRoot.add(grp);
   const w = { name, grp, cells, rows, cols, sx, sy, y0, width, ry };
   walls.push(w);
@@ -416,15 +417,18 @@ function poster(t, accent, x, y, z, ai, k) {
 }
 GENRES.forEach((g, i) => {
   [0, 1].forEach((k) => {
-    const t = makeTape(g.titles[(k * 3) % g.titles.length]);
+    const src = g.titles.length ? g.titles : CAT;     // an empty aisle borrows a poster from the rest of the store
+    if (!src.length) return;
+    const t = makeTape(src[(k * 3 + i) % src.length]);
     poster(t, g.color, aisleX(i) + (k ? 0.52 : -0.52), 1.5, BACKWALL, i, k);
   });
 });
 const CAPS = [];
 for (let gi = 0; gi < N - 1; gi++) {
   const gx = (aisleX(gi) + aisleX(gi + 1)) / 2;
-  const t = makeTape(NEW[(gi * 7 + 3) % NEW.length]);
   sBox(0.98, 2.3, 0.02, shelfMetal, 'back', gx, 1.15, Z0 + 0.01);   // one solid endcap face over the two end panels
+  if (!NEW.length) continue;
+  const t = makeTape(NEW[(gi * 7 + 3) % NEW.length]);
   poster(t, '#c8553d', gx, 1.4, Z0 + 0.02, -1, gi);
   const rec = POSTERS.pop(); rec.mesh.userData = { kind: 'cap', gi }; rec.gi = gi; CAPS.push(rec);
 }
