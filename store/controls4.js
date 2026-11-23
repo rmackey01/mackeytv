@@ -165,17 +165,24 @@ function setCard(kicker, title, meta, tape) {
 }
 
 // ---------- camera targets per mode ----------
+// turn the head to look straight at a point, the way a person scanning a shelf would
+function aimAt(x, z, px, py, pz) {
+  const dx = px - x, dz = pz - z, d = Math.hypot(dx, dz);
+  return { yaw: Math.atan2(-dx, -dz), pitch: Math.atan2(py - 1.62, d) };
+}
 function shelfView(t) {
-  const pitch = Math.atan2(t.y + TAPE_H / 2 - 1.62, HALF_A - 0.4) * 0.9;
-  return { x: aisleX(t.a) + t.side * 0.4, z: Math.min(Z0 + 0.3, Math.max(Z1 + 0.3, t.z)), yaw: t.side < 0 ? Math.PI / 2 : -Math.PI / 2, pitch };
+  const f = aisleX(t.a) + t.side * HALF_A;
+  const x = aisleX(t.a) - t.side * 0.12;                                   // stand across the aisle a little, for room to look
+  const z = Math.min(Z0 + 0.3, Math.max(Z1 + 0.3, t.z));
+  return { x, z, ...aimAt(x, z, f + t.side * 0.035, t.y + TAPE_H / 2, t.z) };
 }
 function wallView(wi, r, c) {
   // stand back far enough to see the whole wall; drift gently toward the highlighted tape
   const w = walls[wi], cell = wallCell(wi, r, c), D = 2.1;
   const p = wallWorld(wi, cell.lx * 0.35, cell.ly, D);
   const midY = w.y0 + (w.rows * w.sy) / 2;
-  const aimY = midY + (cell.ly - midY) * 0.5;
-  return { x: p.x, z: p.z, yaw: w.ry, pitch: Math.atan2(aimY - 1.62, D) };
+  const q = wallWorld(wi, cell.lx, cell.ly + 0.03, 0);
+  return { x: p.x, z: p.z, ...aimAt(p.x, p.z, q.x, q.y, q.z) };
 }
 function setTarget(v) { target.x = v.x; target.z = v.z; target.yaw = state.yaw + angDiff(state.yaw, v.yaw); target.pitch = v.pitch; dirty = true; }
 
