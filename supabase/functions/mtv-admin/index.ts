@@ -176,6 +176,39 @@ async function handle(body: any) {
       if (error) throw error;
       return { ok: true };
     }
+    case "stock": {
+      // bulk-add a list of titles: best TMDB match for each, skip R / NC-17, file everything else on its aisle
+      const items: { title: string; genre?: string }[] = Array.isArray(body.items) ? body.items.slice(0, 8) : [];
+      const out: { title: string; result: string; matched?: string }[] = [];
+      const norm = (t: string) => t.toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+      for (const it of items) {
+        try {
+          const r = await tmdb("/search/movie", { query: it.title, include_adult: "false", region: "US" });
+          const res: any[] = r.results ?? [];
+          const exact = res.filter((m) => norm(m.title) === norm(it.title)).sort((a, b) => (b.vote_count ?? 0) - (a.vote_count ?? 0));
+          const m = exact[0] ?? res[0];
+          if (!m) { out.push({ title: it.title, result: "not found" }); continue; }
+          const { data: cur } = await db.from("mtv_titles").select("status").eq("tmdb_id", m.id).maybeSingle();
+          if (cur) { out.push({ title: it.title, result: "already " + cur.status, matched: m.title }); continue; }
+          const rep = await buildReport(m.id);
+          const blocked = rep.certification === "R" || rep.certification === "NC-17";
+          const genre = it.genre && GENRES.includes(it.genre) ? it.genre : rep.suggested_genre;
+          const { error } = await db.from("mtv_titles").upsert({
+            tmdb_id: rep.tmdb_id, title: rep.title, year: rep.year, certification: rep.certification, runtime: rep.runtime,
+            overview: rep.overview, genre, poster_path: rep.poster_path, backdrop_path: rep.backdrop_path, trailer_youtube: rep.trailer_youtube,
+            providers: rep.providers, watch_links: rep.watch_links, content_flags: rep.content_flags,
+            notes: blocked ? "starter shelves: skipped, rated " + rep.certification : "starter shelves",
+            status: blocked ? "rejected" : "approved", approvals: blocked ? [] : ["tv"],
+            approved_at: blocked ? null : new Date().toISOString(),
+          }, { onConflict: "tmdb_id" });
+          if (error) throw error;
+          out.push({ title: it.title, result: blocked ? "skipped " + rep.certification : "added", matched: rep.title });
+        } catch (e) {
+          out.push({ title: it.title, result: "error: " + (e instanceof Error ? e.message : String(e)) });
+        }
+      }
+      return { results: out };
+    }
     case "status":
       return { tmdb: !!Deno.env.get("TMDB_TOKEN"), watchmode: !!Deno.env.get("WATCHMODE_KEY"), ddd: !!Deno.env.get("DDD_KEY"), required: REQUIRED };
     default:

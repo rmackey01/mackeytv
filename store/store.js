@@ -9,6 +9,10 @@ const GENRES = [
 ];
 const NEW = ['Paddington 2', 'The King of Kings', 'Ordinary Angels', 'Unsung Hero', 'His Only Son', 'Big Dreams', 'Bonhoeffer', 'Jesus Revolution', 'The Biggest Little Farm', 'Wish', 'Moana', 'Encanto', 'Inside Out', 'Elf', 'Nanny McPhee', 'Hidden Figures', 'Queen of Katwe', 'The Chosen', 'Show Me the Father', 'Lord of the Streets', 'Running the Bases', 'Apollo 11', 'Our Planet', 'Jane', 'Little Women', 'Fiddler on the Roof', 'Matilda', 'Holes', 'Enchanted', 'Coco', 'Soul', 'Luca', 'Breakthrough', 'Overcomer', 'Courageous', '42', 'Invincible', 'Secretariat', 'The Rookie', 'Hugo'];
 
+// the starter list (the display copies) is kept for manager mode's STOCK STARTER SHELVES
+const STARTER = [];
+GENRES.forEach((g) => g.titles.forEach((t) => STARTER.push({ title: t.replace(/’/g, "'"), genre: g.name })));
+NEW.forEach((t) => { const tt = t.replace(/’/g, "'"); if (!STARTER.some((x) => x.title === tt)) STARTER.push({ title: tt }); });
 GENRES.forEach((g) => { const real = CAT.filter((t) => t.genre === g.name); g.real = real.length > 0; if (g.real) g.titles = real; });
 {
   const real = CAT.slice().sort((a, b) => (b.year || 0) - (a.year || 0) || String(b.approved_at).localeCompare(String(a.approved_at)));

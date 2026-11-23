@@ -591,7 +591,12 @@ const VISIBLE = 9;
 const AISLES = GENRES.map((g) => g.name);
 kbdEl.innerHTML = KROWS.map((row, r) => `<div class="krow">${row.map((k, c) => `<button type="button" class="key${k.length > 1 ? ' wide' : ''}${k === 'SPACE' ? ' space' : ''}" data-r="${r}" data-c="${c}">${k}</button>`).join('')}</div>`).join('');
 const escT = (v) => String(v ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-const curList = () => (tstate.mgr && tstate.mgr.stage === 'search' ? tstate.mgr.results : tstate.matches);
+const STARTER_ROW = { starter: true, title: `Stock starter shelves (${STARTER.length} titles)`, certification: '', status: '' };
+const curList = () => {
+  const M = tstate.mgr;
+  if (!M || M.stage !== 'search') return tstate.matches;
+  return M.results.length || tstate.q ? M.results : [STARTER_ROW];
+};
 async function mgrApi(action, body = {}) {
   const r = await fetch(ADMIN_FN, { method: 'POST', headers: { 'content-type': 'application/json', 'x-mtv-pin': tstate.mgr.pin }, body: JSON.stringify({ action, ...body }) });
   const j = await r.json().catch(() => ({ error: 'NO RESPONSE' }));
@@ -612,6 +617,7 @@ function renderTerm() {
     return;
   }
   if (M && M.stage === 'report') { renderReport(); return; }
+  if (M && M.stage === 'stocking') { renderStock(); return; }
   qLabel.textContent = M ? 'FIND ANY MOVIE > ' : 'SEARCH > ';
   qEl.textContent = tstate.q;
   const m = curList();
@@ -621,7 +627,7 @@ function renderTerm() {
   if (M && M.busy) { resEl.innerHTML = `<div class="none">${escT(M.busy)}</div>`; countEl.textContent = ''; return; }
   resEl.innerHTML = m.slice(tstate.top, tstate.top + VISIBLE).map((it, i) => {
     const idx = tstate.top + i, on = tstate.zone === 'res' && idx === tstate.sel;
-    const cols = M ? [`${it.title}${it.year ? ' (' + it.year + ')' : ''}`, it.certification || 'NR', statusWord(it)] : [it.title, it.rating, it.where];
+    const cols = it.starter ? ['▶ ' + it.title, '', 'NO R-RATED'] : M ? [`${it.title}${it.year ? ' (' + it.year + ')' : ''}`, it.certification || 'NR', statusWord(it)] : [it.title, it.rating, it.where];
     return `<button type="button" class="tr${on ? ' on' : ''}" data-idx="${idx}"><span>${escT(cols[0].toUpperCase())}</span><span>${escT(cols[1])}</span><span>${escT(cols[2])}</span></button>`;
   }).join('') || `<div class="none">${M ? escT(M.msg || (tstate.q ? 'PRESS GO TO SEARCH.' : 'TYPE A TITLE, THEN PRESS GO.')) : 'NO MATCHES IN STOCK'}</div>`;
   countEl.textContent = M ? (M.results.length ? `${M.results.length} FOUND` : '') : tstate.q ? `${m.length} MATCH${m.length === 1 ? '' : 'ES'}` : `${CATALOG.length} TITLES IN STOCK`;
@@ -681,6 +687,47 @@ async function decideRep(decision) {
   } catch (e) { M.msg = e.message; }
   M.saving = false; renderTerm();
 }
+// ---- manager: stock the starter shelves in batches (paced for the content database's rate limit) ----
+function renderStock() {
+  const S = tstate.mgr.stock;
+  qLabel.textContent = 'STOCKING > '; qEl.textContent = `${S.done} / ${STARTER.length}`;
+  colsEl.innerHTML = ''; countEl.textContent = '';
+  const pct = Math.round((S.done / STARTER.length) * 40);
+  resEl.innerHTML = `<div class="rep">
+    <div>[${'#'.repeat(pct)}${'.'.repeat(40 - pct)}]</div>
+    <div>ADDED ${S.added} · SKIPPED R ${S.skipped} · ALREADY IN ${S.already} · NOT FOUND ${S.missing}${S.errors ? ' · ERRORS ' + S.errors : ''}</div>
+    <div class="ov">${escT(S.last)}</div>
+    <div class="msg">${escT(S.finished ? 'DONE. PRESS BACK TO RESTOCK THE STORE.' : S.cancel ? 'STOPPING...' : 'LEAVE IT RUNNING. PRESS BACK TO STOP.')}</div>
+  </div>`;
+}
+async function runStock() {
+  const M = tstate.mgr;
+  M.stage = 'stocking'; tstate.zone = 'kbd';
+  const S = M.stock = { done: 0, added: 0, skipped: 0, already: 0, missing: 0, errors: 0, last: 'STARTING...', cancel: false, finished: false };
+  renderTerm();
+  for (let i = 0; i < STARTER.length && !S.cancel && tstate.mgr === M; i += 8) {
+    const t0 = performance.now();
+    try {
+      const { results } = await mgrApi('stock', { items: STARTER.slice(i, i + 8) });
+      for (const r of results) {
+        if (r.result === 'added') S.added++;
+        else if (r.result.startsWith('skipped')) S.skipped++;
+        else if (r.result.startsWith('already')) S.already++;
+        else if (r.result === 'not found') S.missing++;
+        else S.errors++;
+        S.last = `${(r.matched || r.title).toUpperCase()}: ${r.result.toUpperCase()}`;
+      }
+      if (S.added) M.changed = true;
+    } catch (e) { S.errors += Math.min(8, STARTER.length - i); S.last = e.message; }
+    S.done = Math.min(STARTER.length, i + 8);
+    if (tstate.mgr === M && M.stage === 'stocking') renderTerm();
+    const wait = 30000 - (performance.now() - t0);
+    if (wait > 0 && S.done < STARTER.length && !S.cancel && tstate.mgr === M) await new Promise((r) => setTimeout(r, wait));
+  }
+  S.finished = true;
+  if (tstate.mgr === M && M.stage === 'stocking') renderTerm();
+}
+
 // ---- manager: login / search ----
 function startManager() { tstate.mgr = { pin: '', stage: 'pin', results: [], msg: '', changed: false }; tstate.zone = 'kbd'; tstate.kr = 0; tstate.kc = 0; renderTerm(); }
 function endManager() { const ch = tstate.mgr && tstate.mgr.changed; tstate.mgr = null; tstate.sel = 0; tstate.top = 0; setQuery(''); return ch; }
@@ -715,7 +762,7 @@ function pressKey(k, btn) {
   if (k === 'EXIT') { closeTerm(); return; }
   if (k === 'MGR') { startManager(); return; }
   if (k === 'LOG OUT') { const ch = endManager(); if (ch) restock(); return; }
-  if (M && M.stage === 'report') return;
+  if (M && (M.stage === 'report' || M.stage === 'stocking')) return;
   if (M && M.stage === 'pin') {
     if (k === 'GO') mgrGo();
     else if (k === 'DEL') M.pin = M.pin.slice(0, -1);
@@ -743,10 +790,18 @@ function closeTerm(silent) {
 function pickResult(idx) {
   const it = curList()[idx]; if (!it) return;
   click(true);
+  if (it.starter) { runStock(); return; }
   if (tstate.mgr) openRecord(it); else fetchItem(it);
 }
 function termNav(key) {
   const M = tstate.mgr;
+  if (M && M.stage === 'stocking') {
+    if (key === 'Escape') {
+      if (M.stock.finished || M.stock.cancel) { const ch = endManager(); if (ch) restock(); return; }
+      M.stock.cancel = true; renderTerm();
+    }
+    return;
+  }
   if (tstate.zone === 'rep') {
     const n = repOptions().length;
     if (key === 'ArrowLeft') M.opt = Math.max(0, M.opt - 1);
