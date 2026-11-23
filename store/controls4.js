@@ -105,6 +105,7 @@ function tapeMeta(t) {
   else bits.push('not on your services right now');
   return bits.join(' · ');
 }
+card.addEventListener('click', () => { if (mode === 'held') openCover(); });
 function setCard(kicker, title, meta) {
   card.querySelector('.k').textContent = kicker;
   card.querySelector('.t').textContent = title;
@@ -247,9 +248,10 @@ function openCover() {
   coverEl.querySelector('.btns').innerHTML = coverActs.map((a, i) => `<button type="button" class="cb" data-i="${i}">${a.label}</button>`).join('');
   coverEl.querySelector('.cnote').textContent = t.pulled ? 'Taken off the shelf: its rating changed.' : !t.demo && !t.source ? 'Not streaming on your services right now.' : t._enriching ? 'Checking details…' : '';
   coverBtn = 0; renderCoverBtns();
+  card.hidden = true;
   mode = 'cover'; coverEl.hidden = false; requestAnimationFrame(() => coverEl.classList.add('show'));
 }
-function closeCover() { coverEl.classList.remove('show'); coverEl.hidden = true; mode = 'held'; }
+function closeCover() { coverEl.classList.remove('show'); coverEl.hidden = true; mode = 'held'; if (heldTape) setCard('YOU PICKED UP', heldTape.title, tapeMeta(heldTape)); }
 function playIt() { if (!heldTape) return; beginPlay(heldTape, false); }
 coverEl.addEventListener('click', (e) => { const b = e.target.closest('.cb'); if (!b) { if (e.target === coverEl) closeCover(); return; } coverBtn = +b.dataset.i; renderCoverBtns(); coverActs[coverBtn].go(); });
 
@@ -974,10 +976,10 @@ addEventListener('keyup', (e) => { const key = KEYMAP[e.key] || e.key; keys[key]
 // ---------- pointer (mouse, touch, or an air-mouse remote) ----------
 const ray = new THREE.Raycaster();
 const ndcOf = (e) => new THREE.Vector2((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-function pickAt(ndc) {
+function pickAt(ndc, far) {
   ray.setFromCamera(ndc, camera);
   const hits = ray.intersectObjects([...pickRoot.children, crt, ...POSTERS.map((p) => p.mesh), ...CAPS.map((p) => p.mesh)], true);
-  if (!hits.length || hits[0].distance > 6) return null;
+  if (!hits.length || hits[0].distance > (far ? 16 : 6)) return null;
   const h = hits[0], d = h.object.userData;
   if (d.kind === 'computer') return { kind: 'computer' };
   if (d.kind === 'poster') return { kind: 'poster', ai: d.ai, k: d.k };
@@ -1019,14 +1021,17 @@ function activate(p) {
   return false;
 }
 let drag = null, hoverTimer = 0;
-renderer.domElement.addEventListener('pointerdown', (e) => { if (mode === 'travel') return; drag = { x: e.clientX, y: e.clientY, yaw: target.yaw, pitch: target.pitch, moved: false }; });
+renderer.domElement.addEventListener('pointerdown', (e) => { if (mode === 'travel') return; drag = { x: e.clientX, y: e.clientY, yaw: target.yaw, pitch: target.pitch, moved: false, touch: e.pointerType !== 'mouse' }; });
 addEventListener('pointerup', (e) => {
-  if (drag && !drag.moved && ['lane', 'aisle', 'shelf', 'wall', 'held', 'poster'].includes(mode)) { if (!activate(pickAt(ndcOf(e))) && mode === 'held') putBack(); }
+  if (drag && !drag.moved && ['lane', 'aisle', 'shelf', 'wall', 'held', 'poster'].includes(mode)) {
+    if (mode === 'held' && drag.touch) openCover();               // phones: tap the tape in your hand to turn it over
+    else if (!activate(pickAt(ndcOf(e), drag.touch)) && mode === 'held') putBack();
+  }
   drag = null;
 });
 addEventListener('pointermove', (e) => {
   if (drag) {
-    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > 6) drag.moved = true;
+    if (Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) > (drag.touch ? 16 : 6)) drag.moved = true;
     if (drag.moved) { target.yaw = drag.yaw - (e.clientX - drag.x) * 0.004; target.pitch = Math.max(-0.8, Math.min(0.5, drag.pitch - (e.clientY - drag.y) * 0.004)); dirty = true; }
     return;
   }
