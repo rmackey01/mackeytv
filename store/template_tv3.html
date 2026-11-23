@@ -131,6 +131,11 @@
     #dpad button:active, #dpad button.down { background: #c8553d; }
     #dpad .u { grid-area: 1 / 2; } #dpad .l { grid-area: 2 / 1; } #dpad .ok { grid-area: 2 / 2; font: 700 15px 'Barlow Condensed', sans-serif; border-radius: 50%; background: rgba(244,234,213,0.22); } #dpad .r { grid-area: 2 / 3; } #dpad .d { grid-area: 3 / 2; }
     #card { right: 158px !important; }
+    #card.rich { bottom: calc(66px + env(safe-area-inset-bottom)); }
+    #card .ov { font-size: 14px; line-height: 1.3; color: #3a362c; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    #card .acts { display: flex; gap: 6px; margin-top: 8px; }
+    #card .acts button { flex: 1; border: 0; border-radius: 9px; padding: 9px 6px; font: 700 16px 'Barlow Condensed', sans-serif; background: #12141c; color: #f4ead5; }
+    #card .acts .go { background: #c8553d; color: #fff; }
   }
   @media (pointer: coarse) {
     #touchbar { display: block; }
@@ -184,6 +189,8 @@
   <div class="k">YOU PICKED UP</div>
   <div class="t"></div>
   <div class="m"></div>
+  <div class="ov" hidden></div>
+  <div class="acts" hidden></div>
 </div>
 <div id="marquee" hidden><div class="board"><div class="mhead">NOW PLAYING</div><div class="mnight"></div><div class="mlist"></div></div></div>
 <div id="fade"></div>

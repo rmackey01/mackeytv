@@ -105,11 +105,38 @@ function tapeMeta(t) {
   else bits.push('not on your services right now');
   return bits.join(' · ');
 }
-card.addEventListener('click', () => { if (mode === 'held') openCover(); });
-function setCard(kicker, title, meta) {
+// phones browse from the card: the highlighted movie's details and Play / See more live here, no Back needed
+const TOUCH = window.matchMedia('(pointer: coarse)').matches && !(window.MackeyTV && window.MackeyTV.play);
+let cardTape = null;
+const cardOv = card.querySelector('.ov'), cardActs = card.querySelector('.acts');
+function cardFrom() { return mode === 'held' ? heldFrom : mode === 'wall' ? 'wall' : mode === 'poster' ? 'poster' : mode === 'lane' ? 'cap' : 'shelf'; }
+function seeMore() { const t = cardTape; if (!t) return; if (mode !== 'held') hold(t, cardFrom()); openCover(); }
+function playNow() {
+  const t = cardTape; if (!t || !t.source) return;
+  const back = mode;
+  if (mode !== 'held') { heldFrom = cardFrom(); heldTape = t; heldWhere = card.querySelector('.k').textContent; }
+  beginPlay(t, false);
+  show.saved.returnTo = back === 'held' ? (heldFrom === 'cap' ? 'lane' : heldFrom) : back;
+}
+card.addEventListener('click', (e) => {
+  const b = e.target.closest('button');
+  if (b) { e.stopPropagation(); if (b.dataset.a === 'play') playNow(); else seeMore(); return; }
+  if (TOUCH && cardTape) seeMore(); else if (mode === 'held') openCover();
+});
+function setCard(kicker, title, meta, tape) {
   card.querySelector('.k').textContent = kicker;
-  card.querySelector('.t').textContent = title;
+  card.querySelector('.t').textContent = tape && tape.year ? `${title} (${tape.year})` : title;
   card.querySelector('.m').textContent = meta;
+  cardTape = tape && !tape.demo ? tape : null;
+  const rich = TOUCH && !!cardTape;
+  card.classList.toggle('rich', rich);
+  cardOv.hidden = !rich || !cardTape.overview;
+  cardActs.hidden = !rich;
+  if (rich) {
+    cardOv.textContent = cardTape.overview || '';
+    cardActs.innerHTML = (cardTape.source ? `<button type="button" data-a="play" class="go">▶ Play</button>` : '') + `<button type="button" data-a="more">See more</button>`;
+    enrichTape(cardTape);
+  }
   card.hidden = false;
 }
 
@@ -139,7 +166,7 @@ function enterShelf(side) {
 function focusShelf() {
   const t = tapeAt(ai, cur.side, cur.row, cur.g); if (!t) return;
   showSpine(t); setTarget(shelfView(t));
-  setCard(`${aisleLabel(ai)} · SHELF ${ROWS - cur.row}`, t.tape.title, tapeMeta(t.tape));
+  setCard(`${aisleLabel(ai)} · SHELF ${ROWS - cur.row}`, t.tape.title, tapeMeta(t.tape), t.tape);
 }
 function moveShelf(dRight, dUp) {
   cur.g = Math.max(0, Math.min(TOTAL - 1, cur.g + (cur.side < 0 ? dRight : -dRight)));
@@ -155,7 +182,7 @@ function enterWall(wi) {
 function focusWall() {
   const w = walls[wcur.wall], cell = wallCell(wcur.wall, wcur.r, wcur.c);
   showWallCell(wcur.wall, wcur.r, wcur.c); setTarget(wallView(wcur.wall, wcur.r, wcur.c));
-  setCard(w.name, cell.tape.title, tapeMeta(cell.tape));
+  setCard(w.name, cell.tape.title, tapeMeta(cell.tape), cell.tape);
 }
 function moveWall(dRight, dUp) {
   const w = walls[wcur.wall];
@@ -183,12 +210,17 @@ function enterPoster(a, k) {
   if (!posterOf(a, k)) return;
   mode = 'poster'; pcur.ai = a; pcur.k = k; renderStops();
   const p = posterOf(a, k); showPoster(p); setTarget(posterView(p));
-  setCard(`${aisleLabel(a)} \u00b7 ON THE WALL`, p.tape.title, tapeMeta(p.tape));
+  setCard(`${aisleLabel(a)} \u00b7 ON THE WALL`, p.tape.title, tapeMeta(p.tape), p.tape);
 }
 function capView(p) { const D = 1.9; return { x: p.x + 0.1, z: p.z + D, yaw: 0.05, pitch: Math.atan2(p.y - 1.62, D) }; }
 function focusCap(gi) {
   const p = CAPS[gi]; showPoster(p); setTarget(capView(p));
-  setCard('ENDCAP \u00b7 NEW ON VIDEO', p.tape.title, tapeMeta(p.tape));
+  setCard('ENDCAP \u00b7 NEW ON VIDEO', p.tape.title, tapeMeta(p.tape), p.tape);
+}
+function refocus() {
+  if (mode === 'shelf') focusShelf(); else if (mode === 'wall') focusWall(); else if (mode === 'poster') enterPoster(pcur.ai, pcur.k);
+  else if (mode === 'lane' && STOPS[stopIdx] && STOPS[stopIdx].kind === 'cap') focusCap(STOPS[stopIdx].gi);
+  else { mode = 'lane'; card.hidden = true; renderStops(); }
 }
 function leavePoster() { mode = 'aisle'; clearHighlight(); card.hidden = true; setTarget({ x: aisleX(ai), z: Z1 + 0.45, yaw: 0, pitch: -0.06 }); renderStops(); }
 
@@ -197,7 +229,7 @@ let heldFrom = 'shelf', heldTape = null, heldWhere = '';
 function hold(tape, from) {
   heldFrom = from; heldTape = tape; heldWhere = from === 'shelf' ? `${aisleLabel(ai)} \u00b7 SHELF ${ROWS - cur.row}` : from === 'poster' ? `${aisleLabel(pcur.ai)} \u00b7 ON THE WALL` : from === 'cap' ? 'ENDCAP \u00b7 NEW ON VIDEO' : 'NEW RELEASES';
   mode = 'held'; inHand(tape); renderStops(); enrichTape(tape);
-  setCard('YOU PICKED UP', tape.title, tapeMeta(tape));
+  setCard('YOU PICKED UP', tape.title, tapeMeta(tape), tape);
 }
 function putBack() { if (heldFrom === 'shelf') { mode = 'shelf'; focusShelf(); } else if (heldFrom === 'poster') enterPoster(pcur.ai, pcur.k); else if (heldFrom === 'cap') { mode = 'lane'; focusCap(STOPS[stopIdx].gi); renderStops(); } else { mode = 'wall'; focusWall(); } }
 
@@ -222,7 +254,7 @@ function enrichTape(t) {
       t.source = pickSource(t);
       if (row.status !== 'approved') t.pulled = true;
       if (mode === 'cover' && heldTape === t) openCover();
-      else if (mode === 'held' && heldTape === t) setCard('YOU PICKED UP', t.title, tapeMeta(t));
+      else if (cardTape === t && !card.hidden) setCard(card.querySelector('.k').textContent, t.title, tapeMeta(t), t);
     }).catch(() => {}).finally(() => { t._enriching = false; });
 }
 function openCover() {
@@ -244,15 +276,15 @@ function openCover() {
   else if (t.pulled) { /* re-rated: no play */ }
   else if (t.source) coverActs.push({ label: `▶ Play on ${t.source.service}`, go: () => playIt() });
   if (t.trailer_youtube) coverActs.push({ label: 'Trailer', go: () => playTrailer(t) });
-  coverActs.push({ label: 'Put it back', go: () => { closeCover(); putBack(); } });
+  coverActs.push({ label: 'Put it back', go: () => { closeCover(); if (!TOUCH) putBack(); } });
   coverEl.querySelector('.btns').innerHTML = coverActs.map((a, i) => `<button type="button" class="cb" data-i="${i}">${a.label}</button>`).join('');
   coverEl.querySelector('.cnote').textContent = t.pulled ? 'Taken off the shelf: its rating changed.' : !t.demo && !t.source ? 'Not streaming on your services right now.' : t._enriching ? 'Checking details…' : '';
   coverBtn = 0; renderCoverBtns();
   card.hidden = true;
   mode = 'cover'; coverEl.hidden = false; requestAnimationFrame(() => coverEl.classList.add('show'));
 }
-function closeCover() { coverEl.classList.remove('show'); coverEl.hidden = true; mode = 'held'; if (heldTape) setCard('YOU PICKED UP', heldTape.title, tapeMeta(heldTape)); }
-function playIt() { if (!heldTape) return; beginPlay(heldTape, false); }
+function closeCover() { coverEl.classList.remove('show'); coverEl.hidden = true; mode = 'held'; if (TOUCH) { putBack(); return; } if (heldTape) setCard('YOU PICKED UP', heldTape.title, tapeMeta(heldTape), heldTape); }
+function playIt() { if (!heldTape) return; beginPlay(heldTape, false); if (TOUCH) show.saved.returnTo = heldFrom === 'cap' ? 'lane' : heldFrom; }
 coverEl.addEventListener('click', (e) => { const b = e.target.closest('.cb'); if (!b) { if (e.target === coverEl) closeCover(); return; } coverBtn = +b.dataset.i; renderCoverBtns(); coverActs[coverBtn].go(); });
 
 // ---------- handing off to the streaming app ----------
@@ -378,7 +410,7 @@ fileIn.addEventListener('change', () => {
   mode = pendingMode; startShow(makeTape(f.name.replace(/\.[^.]+$/, '')), true);
 });
 function startShow(tape, fromMenu) {
-  if (!coverEl.hidden) closeCover();
+  if (!coverEl.hidden) { coverEl.classList.remove('show'); coverEl.hidden = true; }
   mode = 'show';
   show = { t: 0, tape, saved: { x: state.x, z: state.z, yaw: state.yaw, pitch: state.pitch, fromMenu: !!fromMenu }, stage: '', ended: false };
   card.hidden = true; if (hl) hl.visible = false;
@@ -437,7 +469,8 @@ function endShow() {
     BEAM.material.opacity = 0; screenOff();
     camera.fov = baseFov(); camera.updateProjectionMatrix();
     Object.assign(state, sv); Object.assign(target, sv);
-    if (sv.fromMenu || !hl) { mode = 'lane'; card.hidden = true; renderStops(); } else { mode = 'held'; hl.visible = true; setCard('YOU PICKED UP', heldTape.title, tapeMeta(heldTape)); }
+    if (sv.returnTo && sv.returnTo !== 'held') { mode = sv.returnTo; if (hl) hl.visible = true; refocus(); }
+    else if (sv.fromMenu || !hl) { mode = 'lane'; card.hidden = true; renderStops(); } else { mode = 'held'; hl.visible = true; setCard('YOU PICKED UP', heldTape.title, tapeMeta(heldTape), heldTape); }
     dirty = true; fadeEl.classList.remove('on');
   }, 300);
 }
@@ -582,13 +615,13 @@ function fetchItem(item) {
     travelTo([...back, { x: aisleX(L.a), z: LANE_Z }, { x: aisleX(L.a), z: v.z, yaw: 0 }, { x: v.x, z: v.z, yaw: v.yaw, pitch: v.pitch, dur: 0.5 }], () => {
       ai = L.a; stopIdx = aisleStop(L.a); cur.side = L.side; cur.row = L.row; cur.g = L.g;
       mode = 'shelf'; focusShelf();
-      setTimeout(() => { if (mode === 'shelf') { hold(t.tape, 'shelf'); } }, 450);
+      if (!TOUCH) setTimeout(() => { if (mode === 'shelf') { hold(t.tape, 'shelf'); } }, 450);
     });
   } else {
     const v = wallView(L.wall, L.r, L.c);
     travelTo([...back, { x: v.x, z: LANE_Z }, { x: v.x, z: v.z, yaw: v.yaw, pitch: v.pitch, dur: 0.5 }], () => {
       stopIdx = 0; wcur.wall = L.wall; wcur.r = L.r; wcur.c = L.c; mode = 'wall'; focusWall();
-      setTimeout(() => { if (mode === 'wall') { hold(wallCell(L.wall, L.r, L.c).tape, 'wall'); } }, 450);
+      if (!TOUCH) setTimeout(() => { if (mode === 'wall') { hold(wallCell(L.wall, L.r, L.c).tape, 'wall'); } }, 450);
     });
   }
 }
@@ -1001,23 +1034,23 @@ function activate(p) {
   if (p.kind === 'computer') { goSearch(); return true; }
   if (p.kind === 'cap') {
     const si = STOPS.findIndex((s) => s.kind === 'cap' && s.gi === p.gi);
-    if (mode === 'lane' && stopIdx === si) hold(CAPS[p.gi].tape, 'cap');
-    else goStop(si, () => hold(CAPS[p.gi].tape, 'cap'));
+    if (mode === 'lane' && stopIdx === si) { if (TOUCH) focusCap(p.gi); else hold(CAPS[p.gi].tape, 'cap'); }
+    else goStop(si, () => { if (TOUCH) focusCap(p.gi); else hold(CAPS[p.gi].tape, 'cap'); });
     return true;
   }
   if (p.kind === 'poster') {
     const P = posterOf(p.ai, p.k), v = posterView(P);
-    if ((mode === 'aisle' || mode === 'poster' || mode === 'held') && ai === p.ai) { ai = p.ai; enterPoster(p.ai, p.k); hold(P.tape, 'poster'); }
-    else travelTo([...toLane(), { x: aisleX(p.ai), z: LANE_Z }, { x: aisleX(p.ai), z: v.z, yaw: 0 }], () => { ai = p.ai; stopIdx = aisleStop(p.ai); enterPoster(p.ai, p.k); hold(P.tape, 'poster'); });
+    if ((mode === 'aisle' || mode === 'poster' || mode === 'held') && ai === p.ai) { ai = p.ai; enterPoster(p.ai, p.k); if (!TOUCH) hold(P.tape, 'poster'); }
+    else travelTo([...toLane(), { x: aisleX(p.ai), z: LANE_Z }, { x: aisleX(p.ai), z: v.z, yaw: 0 }], () => { ai = p.ai; stopIdx = aisleStop(p.ai); enterPoster(p.ai, p.k); if (!TOUCH) hold(P.tape, 'poster'); });
     return true;
   }
   if (p.kind === 'spine') {
     const item = { loc: { type: 'shelf', a: p.a, side: p.side, row: p.row, g: p.g } };
-    if ((mode === 'shelf' || mode === 'aisle' || mode === 'held') && ai === p.a) { cur.side = p.side; cur.row = p.row; cur.g = p.g; mode = 'shelf'; focusShelf(); hold(tapeAt(ai, p.side, p.row, p.g).tape, 'shelf'); }
+    if ((mode === 'shelf' || mode === 'aisle' || mode === 'held') && ai === p.a) { cur.side = p.side; cur.row = p.row; cur.g = p.g; mode = 'shelf'; focusShelf(); if (!TOUCH) hold(tapeAt(ai, p.side, p.row, p.g).tape, 'shelf'); }
     else { stopIdx = STOPS.length - 1; fetchItem(item); }
     return true;
   }
-  if (p.kind === 'wall') { wcur.wall = p.wall; wcur.r = p.r; wcur.c = p.c; mode = 'wall'; focusWall(); hold(wallCell(p.wall, p.r, p.c).tape, 'wall'); return true; }
+  if (p.kind === 'wall') { wcur.wall = p.wall; wcur.r = p.r; wcur.c = p.c; mode = 'wall'; focusWall(); if (!TOUCH) hold(wallCell(p.wall, p.r, p.c).tape, 'wall'); return true; }
   return false;
 }
 let drag = null, hoverTimer = 0;
@@ -1042,16 +1075,16 @@ addEventListener('pointermove', (e) => {
     renderer.domElement.style.cursor = p ? 'pointer' : 'grab';
     if (p && p.kind === 'spine') {
       const t = tapeAt(p.a, p.side, p.row, p.g); showSpine(t);
-      setCard(`${aisleLabel(p.a)} · SHELF ${ROWS - p.row}`, t.tape.title, tapeMeta(t.tape));
+      setCard(`${aisleLabel(p.a)} · SHELF ${ROWS - p.row}`, t.tape.title, tapeMeta(t.tape), t.tape);
     } else if (p && p.kind === 'wall') {
       showWallCell(p.wall, p.r, p.c); const cell = wallCell(p.wall, p.r, p.c);
-      setCard(walls[p.wall].name, cell.tape.title, tapeMeta(cell.tape));
+      setCard(walls[p.wall].name, cell.tape.title, tapeMeta(cell.tape), cell.tape);
     } else if (p && p.kind === 'cap') {
       const P = CAPS[p.gi]; showPoster(P);
-      setCard('ENDCAP \u00b7 NEW ON VIDEO', P.tape.title, tapeMeta(P.tape));
+      setCard('ENDCAP \u00b7 NEW ON VIDEO', P.tape.title, tapeMeta(P.tape), P.tape);
     } else if (p && p.kind === 'poster') {
       const P = posterOf(p.ai, p.k); showPoster(P);
-      setCard(`${aisleLabel(p.ai)} \u00b7 ON THE WALL`, P.tape.title, tapeMeta(P.tape));
+      setCard(`${aisleLabel(p.ai)} \u00b7 ON THE WALL`, P.tape.title, tapeMeta(P.tape), P.tape);
     } else if (p && p.kind === 'computer') { clearHighlight(); setCard('STORE COMPUTER', 'Search the catalog', `${CATALOG.length} titles in stock`); }
     else if (mode === 'lane' || mode === 'aisle') { clearHighlight(); card.hidden = true; }
   }, 30);
