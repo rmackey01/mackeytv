@@ -611,7 +611,7 @@ function prepSeg() {
 }
 function travelTo(pts, done) {
   const keepBar = mode === 'lane';
-  mode = 'travel'; clearHighlight(); card.hidden = true;
+  mode = 'travel'; queuedKey = null; clearHighlight(); card.hidden = true;
   if (!keepBar) stopsEl.classList.remove('show');
   travel = { pts, i: 0, t: 0, from: { x: state.x, z: state.z, yaw: state.yaw, pitch: state.pitch }, done };
   prepSeg(); dirty = true;
@@ -628,7 +628,7 @@ function stepTravel(dt) {
     travel.from = { x: p.x, z: p.z, yaw: p._yaw, pitch: p.pitch };
     travel.i++;
     if (travel.i < travel.pts.length) prepSeg();
-    else { Object.assign(target, { x: state.x, z: state.z, yaw: state.yaw, pitch: state.pitch }); state.moving = 0; const d = travel.done; travel = null; if (d) d(); }
+    else { Object.assign(target, { x: state.x, z: state.z, yaw: state.yaw, pitch: state.pitch }); state.moving = 0; const d = travel.done; travel = null; if (d) d(); if (queuedKey && mode !== 'travel') { const k = queuedKey; queuedKey = null; setTimeout(() => press(k), 0); } }
   }
 }
 // path from wherever you are back onto the front lane
@@ -988,8 +988,9 @@ function click(heavy) {
 
 // ---------- remote ----------
 const REPEAT_DELAY = 280, REPEAT_RATE = 70;
+let queuedKey = null;
 function press(key) {
-  if (mode === 'travel') return;
+  if (mode === 'travel') { queuedKey = key; return; }          // remembered and done on arrival
   if (mode === 'show') {
     if (!show) return;
     if (key === 'Escape' || (key === 'Enter' && show.ended)) endShow();
@@ -1228,12 +1229,18 @@ window.__press = (k) => press(k);
 {
   const dp = document.getElementById('dpad');
   let rep = null;
-  const stop = () => { clearTimeout(rep); clearInterval(rep); rep = null; dp.querySelectorAll('.down').forEach((b) => b.classList.remove('down')); };
+  let held = null;
+  const stop = () => { clearTimeout(rep); clearInterval(rep); rep = null; if (held) { keys[held] = false; held = null; } dp.querySelectorAll('.down').forEach((b) => b.classList.remove('down')); };
   dp.addEventListener('pointerdown', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     e.preventDefault(); e.stopPropagation(); stop(); b.classList.add('down');
     const k = b.dataset.k; press(k); dirty = true;
-    if (k !== 'Enter') rep = setTimeout(() => { rep = setInterval(() => { press(k); dirty = true; }, 110); }, 320);
+    held = k; keys[k] = true;                                     // holding ▲/▼ walks the aisle, like holding the remote
+    if (mode === 'aisle' && (k === 'ArrowUp' || k === 'ArrowDown')) {   // a quick tap still takes a step
+      target.z = Math.max(Z1 + 0.4, Math.min(LANE_Z, target.z + (k === 'ArrowUp' ? -1.1 : 1.1)));
+      if (k === 'ArrowDown' && target.z >= LANE_Z - 0.001) { mode = 'lane'; stopIdx = aisleStop(ai); renderStops(); }
+    }
+    if (k !== 'Enter' && !(mode === 'aisle' && (k === 'ArrowUp' || k === 'ArrowDown'))) rep = setTimeout(() => { rep = setInterval(() => { press(k); dirty = true; }, 110); }, 320);
   });
   ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => dp.addEventListener(ev, stop));
   // show it wherever the arrows do something; the computer, cover and theater have their own buttons
