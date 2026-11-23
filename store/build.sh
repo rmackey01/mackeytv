@@ -18,5 +18,6 @@ const b=fs.readFileSync('.bundle.js','utf8').split('</script').join('<\\\\/scrip
 fs.writeFileSync('../web/index.html', t.replace('/*BUNDLE*/', () => b));
 "
 cp test-reel.mp4 ../web/
+cp pwa/* ../web/
 rm -f .main.js .bundle.js
 echo "built web/index.html"

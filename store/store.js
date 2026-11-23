@@ -30,7 +30,9 @@ app.appendChild(renderer.domElement);
 const maxAniso = Math.min(4, renderer.capabilities.getMaxAnisotropy());
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x07080c);
-const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.02, 45);
+// keep the same sideways view on a tall phone screen by widening the lens
+const baseFov = () => { const a = window.innerWidth / window.innerHeight; return a >= 1.2 ? 62 : Math.min(96, 2 * Math.atan(Math.tan(31 * Math.PI / 180) * 1.2 / a) * 180 / Math.PI); };
+const camera = new THREE.PerspectiveCamera(baseFov(), window.innerWidth / window.innerHeight, 0.02, 45);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
 

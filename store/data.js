@@ -4,19 +4,20 @@ const SB_KEY = 'sb_publishable_BbwYAESJ5wMfJatLUUrSPQ_NcES4V9W';
 const ADMIN_FN = SB_URL + '/functions/v1/mtv-admin';
 const TMDB_IMG = 'https://image.tmdb.org/t/p/';
 // the family's services, in the order MackeyTV prefers them when a movie is on more than one
+// search pages are the fallback when there's no direct link to the title yet
 const MY_SERVICES = [
-  { name: 'Disney+', re: /disney/i },
-  { name: 'Hulu', re: /hulu/i },
-  { name: 'Prime Video', re: /prime|amazon|freevee/i },
-  { name: 'Paramount+', re: /paramount/i },
-  { name: 'Minno', re: /minno/i },
-  { name: 'Angel Studios', re: /angel/i },
-  { name: 'Pure Flix', re: /pure ?flix/i },
-  { name: 'Max', re: /^max|hbo/i },
-  { name: 'Peacock', re: /peacock/i },
-  { name: 'Tubi', re: /tubi/i },
-  { name: 'Pluto TV', re: /pluto/i },
-  { name: 'YouTube TV', re: /youtube ?tv/i }
+  { name: 'Disney+', re: /disney/i, search: 'https://www.disneyplus.com/search?q=' },
+  { name: 'Hulu', re: /hulu/i, search: 'https://www.hulu.com/search?q=' },
+  { name: 'Prime Video', re: /prime|amazon|freevee/i, search: 'https://www.amazon.com/s?i=instant-video&k=' },
+  { name: 'Paramount+', re: /paramount/i, search: 'https://www.paramountplus.com/search/?q=' },
+  { name: 'Minno', re: /minno/i, search: 'https://www.gominno.com/search?q=' },
+  { name: 'Angel Studios', re: /angel/i, search: 'https://www.angel.com/search?q=' },
+  { name: 'Pure Flix', re: /pure ?flix/i, search: 'https://www.greatamericanpureflix.com/search?q=' },
+  { name: 'Max', re: /^max|hbo/i, search: 'https://play.max.com/search?q=' },
+  { name: 'Peacock', re: /peacock/i, search: 'https://www.peacocktv.com/search?q=' },
+  { name: 'Tubi', re: /tubi/i, search: 'https://tubitv.com/search/' },
+  { name: 'Pluto TV', re: /pluto/i, search: 'https://pluto.tv/search/details?query=' },
+  { name: 'YouTube TV', re: /youtube ?tv/i, search: 'https://tv.youtube.com/search/' }
 ];
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } };
@@ -42,7 +43,7 @@ function pickSource(it) {
     const k = Object.keys(links).find((n) => s.re.test(n));
     if (k) return { service: s.name, url: links[k] };
   }
-  for (const s of MY_SERVICES) if (provs.some((n) => s.re.test(n))) return { service: s.name, url: null };
+  for (const s of MY_SERVICES) if (provs.some((n) => s.re.test(n))) return { service: s.name, url: s.search + encodeURIComponent(it.title), search: true };
   return null;
 }
 function loadImg(src, ms) {

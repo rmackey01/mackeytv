@@ -250,22 +250,27 @@ function openCover() {
   mode = 'cover'; coverEl.hidden = false; requestAnimationFrame(() => coverEl.classList.add('show'));
 }
 function closeCover() { coverEl.classList.remove('show'); coverEl.hidden = true; mode = 'held'; }
-function playIt() { if (!heldTape) return; if (heldTape.demo) testVideo = reelVideo(); else testVideo = null; startShow(heldTape); }
+function playIt() { if (!heldTape) return; beginPlay(heldTape, false); }
 coverEl.addEventListener('click', (e) => { const b = e.target.closest('.cb'); if (!b) { if (e.target === coverEl) closeCover(); return; } coverBtn = +b.dataset.i; renderCoverBtns(); coverActs[coverBtn].go(); });
 
 // ---------- handing off to the streaming app ----------
 // On the TV, the MackeyTV launcher app provides window.MackeyTV; in a browser we just open the link.
+const onTV = () => !!(window.MackeyTV && window.MackeyTV.play);
 function launchTitle(t) {
   const src = t.source; if (!src) return false;
-  try {
-    if (window.MackeyTV && window.MackeyTV.play) return !!window.MackeyTV.play(src.url || '', src.service, t.title);
-  } catch (e) { /* fall through */ }
-  if (src.url) { window.open(src.url, '_blank'); return true; }
-  return false;
+  if (onTV()) { try { return !!window.MackeyTV.play(src.search ? '' : (src.url || ''), src.service, t.title); } catch (e) { return false; } }
+  return !!(show && show.prelaunched);
+}
+function beginPlay(tape, fromMenu) {
+  let pre = false;
+  if (!tape.demo && !onTV() && tape.source && tape.source.url) { try { pre = !!window.open(tape.source.url, '_blank'); } catch (e) { pre = false; } }
+  testVideo = tape.demo ? reelVideo() : null;
+  startShow(tape, fromMenu);
+  show.prelaunched = pre;
 }
 function playTrailer(t) {
   const url = 'https://www.youtube.com/watch?v=' + t.trailer_youtube;
-  try { if (window.MackeyTV && window.MackeyTV.play) { window.MackeyTV.play(url, 'YouTube', t.title + ' trailer'); return; } } catch (e) { /* fall through */ }
+  try { if (onTV()) { window.MackeyTV.play(url, 'YouTube', t.title + ' trailer'); return; } } catch (e) { /* fall through */ }
   window.open(url, '_blank');
 }
 // coming back from the streaming app
@@ -410,7 +415,7 @@ function stepShow(dt) {
     state.x = BOOTH.x * (1 - e); state.z = BOOTH.z + (endZ - BOOTH.z) * e;
     show.camY = BOOTH.y + (endY - BOOTH.y) * e;
     state.pitch = Math.atan2(SCREEN.y - show.camY, state.z - SCREEN.z) * (1 - e);
-    camera.fov = 62 - 14 * e; camera.updateProjectionMatrix();
+    camera.fov = baseFov() * (1 - 0.226 * e); camera.updateProjectionMatrix();
     BEAM.material.opacity *= 1 - e * 0.85;   // the beam fades as you sink into the picture
   }
 }
@@ -428,7 +433,7 @@ function endShow() {
   fadeEl.classList.add('on'); endEl.classList.remove('show'); endEl.hidden = true;
   setTimeout(() => {
     BEAM.material.opacity = 0; screenOff();
-    camera.fov = 62; camera.updateProjectionMatrix();
+    camera.fov = baseFov(); camera.updateProjectionMatrix();
     Object.assign(state, sv); Object.assign(target, sv);
     if (sv.fromMenu || !hl) { mode = 'lane'; card.hidden = true; renderStops(); } else { mode = 'held'; hl.visible = true; setCard('YOU PICKED UP', heldTape.title, tapeMeta(heldTape)); }
     dirty = true; fadeEl.classList.remove('on');
@@ -479,8 +484,7 @@ function playFromMarquee(i) {
   const p = marq.picks[i]; if (!p) return;
   const sv = marq.saved;
   closeMarquee(false);
-  testVideo = p.tape.demo ? reelVideo() : null;
-  startShow(p.tape, true);
+  beginPlay(p.tape, true);
   show.saved = { ...sv, fromMenu: true };
 }
 marqEl.addEventListener('click', (e) => { const b = e.target.closest('.mrow'); if (!b) return; marq.sel = +b.dataset.i; playFromMarquee(marq.sel); });
@@ -1088,10 +1092,18 @@ function frame(now) {
   if (now - lastFps > 1000) { const fps = Math.round(frames * 1000 / (now - lastFps)); fpsEl.textContent = fps > 0 ? `${fps} fps` : 'idle'; frames = 0; lastFps = now; }
   requestAnimationFrame(frame);
 }
-addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setPixelRatio(pr()); renderer.setSize(window.innerWidth, window.innerHeight); dirty = true; });
+addEventListener('resize', () => { if (mode !== 'show') camera.fov = baseFov(); camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setPixelRatio(pr()); renderer.setSize(window.innerWidth, window.innerHeight); dirty = true; });
 // entrance: you start a step back from the aisle signs, then settle onto the lane
 setTarget({ x: STOPS[START].x, z: LANE_Z, yaw: 0, pitch: -0.06 });
 window.__press = (k) => press(k);
+// on-screen Back and Menu for phones and tablets
+{
+  const tb = document.getElementById('touchbar');
+  if (tb) {
+    tb.querySelector('.tback').addEventListener('click', (e) => { e.stopPropagation(); press('Escape'); dirty = true; });
+    tb.querySelector('.tmenu').addEventListener('click', (e) => { e.stopPropagation(); if (mode === 'menu') closeMenu(); else if (mode === 'lane' || mode === 'aisle') { clearHighlight(); card.hidden = true; openMenu(); } else press('Escape'); dirty = true; });
+  }
+}
 window.__redraw = () => { dirty = true; };
 window.__type = (s) => { for (const ch of s) pressKey(ch === ' ' ? 'SPACE' : ch.toUpperCase()); };
 window.__mode = () => mode;
