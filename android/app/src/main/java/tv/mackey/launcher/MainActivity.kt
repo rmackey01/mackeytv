@@ -15,6 +15,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -52,10 +53,14 @@ class MainActivity : Activity() {
                 }
                 override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                     // no internet or the site is down: use the copy of the store built into the app
-                    if (request.isForMainFrame && !usingOffline) {
-                        usingOffline = true
-                        view.loadUrl("file:///android_asset/store.html")
-                    }
+                    if (request.isForMainFrame) goOffline(view)
+                }
+                override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+                    if (request.isForMainFrame && response.statusCode >= 400) goOffline(view)
+                }
+                override fun onPageFinished(view: WebView, url: String) {
+                    // make sure what loaded really is the store
+                    if (!usingOffline) view.evaluateJavascript("!!document.getElementById('kbd')") { ok -> if (ok != "true") goOffline(view) }
                 }
             }
             addJavascriptInterface(Bridge(), "MackeyTV")
@@ -64,6 +69,12 @@ class MainActivity : Activity() {
         hideBars()
         web.loadUrl(BuildConfig.STORE_URL)
         web.requestFocus()
+    }
+
+    private fun goOffline(view: WebView) {
+        if (usingOffline) return
+        usingOffline = true
+        view.post { view.loadUrl("file:///android_asset/store.html") }
     }
 
     private fun hideBars() {
