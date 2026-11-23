@@ -22,10 +22,10 @@ const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { retur
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* storage unavailable */ } };
 
 async function loadCatalog() {
-  const cols = 'tmdb_id,title,year,certification,runtime,overview,genre,poster_path,backdrop_path,trailer_youtube,providers,watch_links,content_flags,approved_at';
+  const cols = 'tmdb_id,title,year,certification,runtime,overview,genre,poster_path,backdrop_path,trailer_youtube,providers,watch_links,content_flags,approved_at,source,enriched_at';
   try {
     const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 8000);
-    const r = await fetch(`${SB_URL}/rest/v1/mtv_titles?select=${cols}&status=eq.approved&order=title.asc&limit=2000`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, signal: ctl.signal });
+    const r = await fetch(`${SB_URL}/rest/v1/mtv_titles?select=${cols}&status=eq.approved&order=title.asc&limit=5000`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, signal: ctl.signal });
     clearTimeout(to);
     if (!r.ok) throw new Error('catalog ' + r.status);
     const rows = await r.json();
@@ -53,7 +53,20 @@ function loadImg(src, ms) {
     im.src = src;
   });
 }
-const CAT = (await loadCatalog()).map((it) => ({ ...it, rating: it.certification || 'NR', source: pickSource(it) }));
-await Promise.all(CAT.map(async (it) => { if (it.poster_path) it.img = await loadImg(TMDB_IMG + 'w185' + it.poster_path, 9000); }));
+// the server keeps the catalog in step with what's streaming; ask it to check (it does the real work at most once a day)
+try { fetch(ADMIN_FN, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"action":"sync"}', keepalive: true }).catch(() => {}); } catch (e) { /* offline */ }
+// automatic titles that have left every family service drop off the shelves; hand-added ones stay
+const CAT = (await loadCatalog())
+  .map((it) => ({ ...it, origin: it.source || 'manual', rating: it.certification || 'NR', source: pickSource(it) }))
+  .filter((it) => it.source || it.origin !== 'auto');
+// cover art only for what's shown face-out (New Releases, endcaps, back-wall posters); spines are painted
+{
+  const want = new Set();
+  CAT.slice().sort((a, b) => (b.year || 0) - (a.year || 0) || String(b.approved_at).localeCompare(String(a.approved_at))).slice(0, 40).forEach((t) => want.add(t));
+  const byGenre = {};
+  CAT.forEach((t) => { (byGenre[t.genre] = byGenre[t.genre] || []).push(t); });
+  Object.values(byGenre).forEach((list) => list.slice(0, 12).forEach((t) => want.add(t)));
+  await Promise.all([...want].map(async (it) => { if (it.poster_path) it.img = await loadImg(TMDB_IMG + 'w185' + it.poster_path, 9000); }));
+}
 // sharper art for the few big posters, loaded after the store is up
 function hiResPoster(it, cb) { if (it && it.poster_path) loadImg(TMDB_IMG + 'w500' + it.poster_path, 15000).then((im) => { if (im) cb(im); }); }

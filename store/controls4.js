@@ -195,7 +195,7 @@ function leavePoster() { mode = 'aisle'; clearHighlight(); card.hidden = true; s
 let heldFrom = 'shelf', heldTape = null, heldWhere = '';
 function hold(tape, from) {
   heldFrom = from; heldTape = tape; heldWhere = from === 'shelf' ? `${aisleLabel(ai)} \u00b7 SHELF ${ROWS - cur.row}` : from === 'poster' ? `${aisleLabel(pcur.ai)} \u00b7 ON THE WALL` : from === 'cap' ? 'ENDCAP \u00b7 NEW ON VIDEO' : 'NEW RELEASES';
-  mode = 'held'; inHand(tape); renderStops();
+  mode = 'held'; inHand(tape); renderStops(); enrichTape(tape);
   setCard('YOU PICKED UP', tape.title, tapeMeta(tape));
 }
 function putBack() { if (heldFrom === 'shelf') { mode = 'shelf'; focusShelf(); } else if (heldFrom === 'poster') enterPoster(pcur.ai, pcur.k); else if (heldFrom === 'cap') { mode = 'lane'; focusCap(STOPS[stopIdx].gi); renderStops(); } else { mode = 'wall'; focusWall(); } }
@@ -206,12 +206,27 @@ let coverBtn = 0, coverActs = [];
 function renderCoverBtns() { coverEl.querySelectorAll('.cb').forEach((b, i) => b.classList.toggle('on', i === coverBtn)); }
 function flagNote(t) {
   const cf = t.content_flags;
-  if (!cf) return 'Not checked';
+  if (!cf) return t.enriched_at ? 'Not checked' : 'Checking…';
   if (!cf.found) return 'Not in the database';
   return cf.flags.length ? `${cf.flags.length} noted` : 'None reported';
 }
+// details (trailer, play link, content notes) are filled in the first time a movie is picked up
+function enrichTape(t) {
+  if (t.demo || t.enriched_at || t._enriching || !t.tmdb_id) return;
+  t._enriching = true;
+  fetch(ADMIN_FN, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'enrich', tmdb_id: t.tmdb_id }) })
+    .then((r) => r.json()).then((j) => {
+      const row = j && j.title; if (!row) return;
+      Object.assign(t, row, { origin: row.source, rating: row.certification || t.rating });
+      t.source = pickSource(t);
+      if (row.status !== 'approved') t.pulled = true;
+      if (mode === 'cover' && heldTape === t) openCover();
+      else if (mode === 'held' && heldTape === t) setCard('YOU PICKED UP', t.title, tapeMeta(t));
+    }).catch(() => {}).finally(() => { t._enriching = false; });
+}
 function openCover() {
   const t = heldTape; if (!t) return;
+  enrichTape(t);
   const img = coverEl.querySelector('img');
   if (t.poster_path) img.src = TMDB_IMG + 'w342' + t.poster_path;
   else { const c = makeCanvas(320, 576); drawCover(c.getContext('2d'), 320, 576, t); img.src = c.toDataURL(); }
@@ -225,11 +240,12 @@ function openCover() {
   ].map(([k, v]) => `<div><span>${k}</span><b>${v}</b></div>`).join('');
   coverActs = [];
   if (t.demo) coverActs.push({ label: '▶ Test the projector', go: () => playIt() });
+  else if (t.pulled) { /* re-rated: no play */ }
   else if (t.source) coverActs.push({ label: `▶ Play on ${t.source.service}`, go: () => playIt() });
   if (t.trailer_youtube) coverActs.push({ label: 'Trailer', go: () => playTrailer(t) });
   coverActs.push({ label: 'Put it back', go: () => { closeCover(); putBack(); } });
   coverEl.querySelector('.btns').innerHTML = coverActs.map((a, i) => `<button type="button" class="cb" data-i="${i}">${a.label}</button>`).join('');
-  coverEl.querySelector('.cnote').textContent = !t.demo && !t.source ? 'Not streaming on your services right now.' : '';
+  coverEl.querySelector('.cnote').textContent = t.pulled ? 'Taken off the shelf: its rating changed.' : !t.demo && !t.source ? 'Not streaming on your services right now.' : t._enriching ? 'Checking details…' : '';
   coverBtn = 0; renderCoverBtns();
   mode = 'cover'; coverEl.hidden = false; requestAnimationFrame(() => coverEl.classList.add('show'));
 }

@@ -20,12 +20,18 @@ const json = (body: unknown, status = 200) =>
 
 const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
+// tolerate a pasted "Bearer ..." prefix, quotes or stray whitespace
+const cleanToken = (v: string) => v.trim().replace(/^["']|["']$/g, "").replace(/^bearer\s+/i, "").replace(/\s+/g, "");
 async function tmdb(path: string, params: Record<string, string> = {}) {
   const token = Deno.env.get("TMDB_TOKEN");
   if (!token) throw new Error("TMDB key not set yet");
   const u = new URL(TMDB + path);
   for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
-  const r = await fetch(u, { headers: { Authorization: `Bearer ${token}`, accept: "application/json" } });
+  // works with either TMDB credential: the long Read Access Token, or the short v3 API key
+  const t = cleanToken(token);
+  const long = t.length > 60;
+  if (!long) u.searchParams.set("api_key", t);
+  const r = await fetch(u, { headers: long ? { Authorization: `Bearer ${t}`, accept: "application/json" } : { accept: "application/json" } });
   if (!r.ok) throw new Error(`TMDB ${r.status}`);
   return r.json();
 }
@@ -109,6 +115,124 @@ async function buildReport(tmdbId: number) {
   };
 }
 
+// ---------- automatic catalog: what's streaming now on the family's services ----------
+const MY_SERVICES = [/disney/i, /hulu/i, /prime video|amazon prime/i, /paramount/i, /minno/i, /angel/i, /pure ?flix/i, /^max$|hbo max/i, /peacock/i, /tubi/i, /pluto/i, /freevee/i];
+const CERTS = ["G", "PG", "PG-13"];
+async function pool<T, R>(items: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length); let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) { const k = i++; out[k] = await fn(items[k]); } }));
+  return out;
+}
+async function cfgGet(key: string) { const { data } = await db.from("mtv_config").select("value").eq("key", key).maybeSingle(); return data?.value ?? null; }
+async function cfgSet(key: string, value: unknown) { await db.from("mtv_config").upsert({ key, value, updated_at: new Date().toISOString() }); }
+async function keywordIds(queries: string[], names: string[]) {
+  const ids = new Set<number>();
+  for (const q of queries) {
+    const r = await tmdb("/search/keyword", { query: q }).catch(() => ({ results: [] }));
+    for (const k of r.results ?? []) if (names.includes(String(k.name).toLowerCase())) ids.add(k.id);
+  }
+  return [...ids];
+}
+function usProviders(wp: any) {
+  const us = wp?.results?.US ?? {};
+  return [...(us.flatrate ?? []), ...(us.free ?? []), ...(us.ads ?? [])]
+    .filter((p: any, i: number, a: any[]) => a.findIndex((q) => q.provider_id === p.provider_id) === i)
+    .map((p: any) => ({ id: p.provider_id, name: p.provider_name, logo_path: p.logo_path }));
+}
+async function syncCatalog(force: boolean) {
+  const prev: any = await cfgGet("sync");
+  const now = Date.now();
+  if (!force && prev?.at && now - Date.parse(prev.at) < 20 * 3600e3) return { skipped: "synced recently", last: prev };
+  if (prev?.running && now - Date.parse(prev.running) < 8 * 60e3) return { skipped: "already running" };
+  await cfgSet("sync", { ...(prev ?? {}), running: new Date().toISOString() });
+  try {
+    const pl = await tmdb("/watch/providers/movie", { watch_region: "US" });
+    const provIds = (pl.results ?? []).filter((p: any) => MY_SERVICES.some((re) => re.test(p.provider_name))).map((p: any) => p.provider_id);
+    const faith = await keywordIds(["christian", "christianity", "bible", "faith"], ["christian film", "christianity", "christian", "bible", "faith", "biblical", "jesus christ"]);
+    const sports = await keywordIds(["sports", "based on true story", "biography", "sport"], ["sports", "sport", "based on true story", "biography", "true story", "sports film"]);
+    // first aisle to claim a movie keeps it
+    const AISLES: [string, Record<string, string>][] = [
+      ["DOCUMENTARIES", { with_genres: "99" }],
+      ["ANIMATED", { with_genres: "16" }],
+      ["FAITH", { with_keywords: faith.join("|") }],
+      ["SPORTS & TRUE STORIES", { with_keywords: sports.join("|") }],
+      ["CLASSICS", { "primary_release_date.lte": "1975-12-31", sort_by: "vote_count.desc" }],
+      ["FAMILY", { with_genres: "10751" }],
+    ];
+    const base = {
+      watch_region: "US", with_watch_providers: provIds.join("|"), with_watch_monetization_types: "flatrate|free|ads",
+      certification_country: "US", include_adult: "false", sort_by: "popularity.desc", "vote_count.gte": "15", language: "en-US",
+    };
+    const jobs: { genre: string; cert: string; params: Record<string, string> }[] = [];
+    for (const [genre, extra] of AISLES) {
+      if ((genre === "FAITH" && !faith.length) || (genre === "SPORTS & TRUE STORIES" && !sports.length)) continue;
+      for (const cert of CERTS) for (const page of ["1", "2", "3"]) jobs.push({ genre, cert, params: { ...base, ...extra, certification: cert, page } });
+    }
+    const pages = await pool(jobs, 8, (j) => tmdb("/discover/movie", j.params).then((r) => ({ j, r })).catch(() => ({ j, r: { results: [] } })));
+    const found = new Map<number, { m: any; genre: string; cert: string }>();
+    for (const [genre] of AISLES) for (const { j, r } of pages) if (j.genre === genre) for (const m of r.results ?? []) if (!found.has(m.id)) found.set(m.id, { m, genre, cert: j.cert });
+
+    const ids = [...found.keys()];
+    const existing = new Map<number, any>();
+    for (let i = 0; i < ids.length; i += 300) {
+      const { data } = await db.from("mtv_titles").select("tmdb_id,status,source").in("tmdb_id", ids.slice(i, i + 300));
+      for (const e of data ?? []) existing.set(e.tmdb_id, e);
+    }
+    const { data: autoRows } = await db.from("mtv_titles").select("tmdb_id").eq("source", "auto").eq("status", "approved");
+    // providers: every title found now, plus auto titles that dropped out of the top pages (did they leave the services?)
+    const check = [...new Set([...ids, ...(autoRows ?? []).map((r: any) => r.tmdb_id)])].slice(0, 1100);
+    const provs = new Map<number, any[]>();
+    await pool(check, 20, async (id) => { const wp = await tmdb(`/movie/${id}/watch/providers`).catch(() => null); if (wp) provs.set(id, usProviders(wp)); });
+
+    const stamp = new Date().toISOString();
+    const inserts: any[] = [];
+    let added = 0, refreshed = 0, left = 0;
+    for (const [id, { m, genre, cert }] of found) {
+      const ex = existing.get(id);
+      if (ex) continue;                                  // manual titles and anything you pulled are left alone
+      inserts.push({
+        tmdb_id: id, title: m.title, year: m.release_date ? Number(m.release_date.slice(0, 4)) : null, certification: cert,
+        overview: m.overview || null, genre, poster_path: m.poster_path, backdrop_path: m.backdrop_path,
+        providers: provs.get(id) ?? [], watch_links: {}, status: "approved", approvals: ["auto"], approved_at: stamp,
+        source: "auto", notes: "auto",
+      });
+    }
+    for (let i = 0; i < inserts.length; i += 200) {
+      const { error } = await db.from("mtv_titles").upsert(inserts.slice(i, i + 200), { onConflict: "tmdb_id", ignoreDuplicates: true });
+      if (error) throw error;
+      added += inserts.slice(i, i + 200).length;
+    }
+    await pool(autoRows ?? [], 10, async (r: any) => {
+      const p = provs.get(r.tmdb_id); if (!p) return;
+      await db.from("mtv_titles").update({ providers: p }).eq("tmdb_id", r.tmdb_id);
+      refreshed++; if (!p.length) left++;
+    });
+    const result = { at: stamp, found: found.size, added, refreshed, left, providers: provIds.length };
+    await cfgSet("sync", result);
+    return result;
+  } catch (e) {
+    await cfgSet("sync", { ...(prev ?? {}), running: null, error: e instanceof Error ? e.message : String(e) });
+    throw e;
+  }
+}
+// fill in the slow details for one title the first time someone looks at it (trailer, runtime, play links, content notes)
+async function enrich(tmdbId: number) {
+  const { data: row } = await db.from("mtv_titles").select("*").eq("tmdb_id", tmdbId).maybeSingle();
+  if (!row || row.status !== "approved") return { title: null };
+  if (row.enriched_at && Date.now() - Date.parse(row.enriched_at) < 30 * 86400e3) return { title: row };
+  const rep = await buildReport(tmdbId);
+  const patch = {
+    runtime: rep.runtime, overview: rep.overview ?? row.overview, trailer_youtube: rep.trailer_youtube, providers: rep.providers,
+    watch_links: { ...rep.watch_links, ...(row.source === "manual" ? row.watch_links ?? {} : {}) },
+    content_flags: rep.content_flags ?? row.content_flags, enriched_at: new Date().toISOString(),
+    certification: rep.certification ?? row.certification,
+  };
+  // a re-rating to R takes it off the shelf
+  const blocked = patch.certification === "R" || patch.certification === "NC-17";
+  const { data } = await db.from("mtv_titles").update(blocked ? { ...patch, status: "rejected", notes: "auto: re-rated " + patch.certification } : patch).eq("tmdb_id", tmdbId).select().single();
+  return { title: data };
+}
+
 // ---------- actions ----------
 async function handle(body: any) {
   switch (body.action) {
@@ -150,7 +274,7 @@ async function handle(body: any) {
         overview: rep.overview, genre, poster_path: rep.poster_path, backdrop_path: rep.backdrop_path, trailer_youtube: rep.trailer_youtube,
         providers: rep.providers, watch_links: { ...rep.watch_links, ...(body.watch_links ?? {}) }, content_flags: rep.content_flags,
         notes: body.notes ?? null, status, approvals,
-        approved_at: status === "approved" ? new Date().toISOString() : null,
+        approved_at: status === "approved" ? new Date().toISOString() : null, source: "manual", enriched_at: new Date().toISOString(),
       };
       const { data, error } = await db.from("mtv_titles").upsert(row, { onConflict: "tmdb_id" }).select().single();
       if (error) throw error;
@@ -209,6 +333,8 @@ async function handle(body: any) {
       }
       return { results: out };
     }
+    case "resync":
+      return await syncCatalog(true);
     case "status":
       return { tmdb: !!Deno.env.get("TMDB_TOKEN"), watchmode: !!Deno.env.get("WATCHMODE_KEY"), ddd: !!Deno.env.get("DDD_KEY"), required: REQUIRED };
     default:
@@ -218,12 +344,19 @@ async function handle(body: any) {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method === "GET") return json({ pin: !!Deno.env.get("MTV_ADMIN_PIN"), tmdb: !!Deno.env.get("TMDB_TOKEN"), watchmode: !!Deno.env.get("WATCHMODE_KEY"), ddd: !!Deno.env.get("DDD_KEY") });
+  if (req.method === "GET") return json({ pin: !!Deno.env.get("MTV_ADMIN_PIN"), tmdbShape: ((t) => ({ len: t.length, clean: cleanToken(t).length, bearer: /^\s*bearer/i.test(t), quote: /["']/.test(t), dots: cleanToken(t).split(".").length - 1 }))(Deno.env.get("TMDB_TOKEN") ?? ""), tmdb: !!Deno.env.get("TMDB_TOKEN"), watchmode: !!Deno.env.get("WATCHMODE_KEY"), ddd: !!Deno.env.get("DDD_KEY") });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  let body: any;
+  try { body = await req.json(); } catch { return json({ error: "Bad request" }, 400); }
+  // the TV calls these without the PIN: a daily catalog sync (throttled) and details for one approved title
+  if (body.action === "sync" || body.action === "enrich") {
+    try { return json(body.action === "sync" ? await syncCatalog(false) : await enrich(Number(body.tmdb_id))); }
+    catch (e) { return json({ error: e instanceof Error ? e.message : String(e) }, 400); }
+  }
   const pin = Deno.env.get("MTV_ADMIN_PIN");
   if (!pin || req.headers.get("x-mtv-pin") !== pin) { await new Promise((r) => setTimeout(r, 1200)); return json({ error: "Wrong PIN" }, 401); }
   try {
-    return json(await handle(await req.json()));
+    return json(await handle(body));
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : String(e) }, 400);
   }
