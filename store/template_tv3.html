@@ -28,11 +28,14 @@
 
   #menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: flex-start; padding-left: 6vw; background: linear-gradient(90deg, rgba(7,8,12,0.92), rgba(7,8,12,0.55) 45%, rgba(7,8,12,0)); opacity: 0; transition: opacity 160ms ease; }
   #menu.show { opacity: 1; }
-  #menu .panel { display: flex; flex-direction: column; gap: 10px; min-width: 360px; }
-  #menu h2 { margin: 0 0 10px; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-weight: 400; font-size: 30px; color: #c8553d; text-shadow: 0 0 14px rgba(200,85,61,0.6); }
-  #menu .mi { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 14px 20px; border-radius: 12px; border: 2px solid #3a3f52; background: rgba(28,31,43,0.92); color: #f4ead5; font-family: 'Barlow Condensed', sans-serif; cursor: pointer; transition: transform 120ms ease, border-color 120ms ease; }
-  #menu .mi span { font-size: 30px; font-weight: 700; }
-  #menu .mi small { font-size: 18px; color: #a69d8a; font-weight: 600; }
+  #menu .panel { display: flex; flex-direction: column; gap: 0.8vh; width: clamp(220px, 24vw, 380px); max-height: 92vh; }
+  #menu .items { display: flex; flex-direction: column; gap: 0.8vh; }
+  #menu .mi { width: 100%; box-sizing: border-box; }
+  #menu h2 { margin: 0 0 10px; font-family: 'Barlow Condensed', sans-serif; font-weight: 400; font-size: 30px; color: #c8553d; text-shadow: 0 0 14px rgba(200,85,61,0.6); }
+  #menu .mi { display: flex; flex-direction: column; align-items: flex-start; gap: 0; text-align: left; padding: 0.9vh 1.4vw; border-radius: 10px; border: 2px solid #3a3f52; background: rgba(28,31,43,0.92); color: #f4ead5; font-family: 'Barlow Condensed', sans-serif; cursor: pointer; transition: transform 120ms ease, border-color 120ms ease; }
+  #menu .mi span { font-size: clamp(16px, 3.4vh, 30px); font-weight: 700; line-height: 1.1; }
+  #menu .mi small { display: none; font-size: clamp(12px, 2vh, 18px); color: #a69d8a; font-weight: 600; }
+  #menu .mi.on small { display: block; }
   #menu .mi.on { border-color: #c8553d; background: #2a1a1a; transform: translateX(8px); box-shadow: 0 0 24px rgba(200,85,61,0.35); }
   #term { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.2vh; background: radial-gradient(ellipse at 50% 40%, #1a1d29, #07080c 75%); opacity: 0; transition: opacity 220ms ease; }
   #term.show { opacity: 1; }
@@ -115,8 +118,8 @@
 <body>
 <div id="app"></div>
 <div id="loading">Stocking the shelves…</div>
-<div id="brand">MackeyTV <small>TV MODE · SAMPLE TITLES</small></div>
-<div id="fps" aria-live="off">—</div>
+<div id="brand">MackeyTV</div>
+<div id="fps" aria-live="off" hidden>—</div>
 <div id="card" hidden>
   <div class="k">YOU PICKED UP</div>
   <div class="t"></div>
