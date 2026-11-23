@@ -175,6 +175,8 @@
     .key.space { min-width: 28vw; }
     #marquee .board { width: 92vw; padding: 18px 16px; }
   }
+  #yt { position: fixed; z-index: 3; background: #000; box-shadow: 0 0 60px rgba(200,212,255,0.25); }
+  #yt iframe { width: 100%; height: 100%; display: block; border: 0; }
 </style>
 </head>
 <body>
@@ -182,6 +184,7 @@
 <div id="loading">Stocking the shelves…</div>
 <div id="brand">MackeyTV</div>
 <div id="fps" aria-live="off" hidden>—</div>
+<div id="yt" hidden></div>
 <div id="dpad" hidden><button type="button" data-k="ArrowUp" class="u" aria-label="Up">▲</button><button type="button" data-k="ArrowLeft" class="l" aria-label="Left">◀</button><button type="button" data-k="Enter" class="ok" aria-label="Select">OK</button><button type="button" data-k="ArrowRight" class="r" aria-label="Right">▶</button><button type="button" data-k="ArrowDown" class="d" aria-label="Down">▼</button></div>
 <div id="touchbar"><button type="button" class="tback" aria-label="Back">‹</button><button type="button" class="tmenu" aria-label="Menu">☰</button></div>
 <div id="install" hidden><span class="msg"></span><button type="button" class="go" hidden>Install</button><button type="button" class="x" aria-label="Not now">✕</button></div>

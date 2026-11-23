@@ -47,6 +47,8 @@ class MainActivity : Activity() {
                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                     // only the store itself loads in here; anything else goes to the right app
                     val u = request.url
+                    // the trailer player (an embedded frame) and the store itself load in here
+                    if (!request.isForMainFrame) return false
                     if (u.host == Uri.parse(BuildConfig.STORE_URL).host || u.scheme == "file") return false
                     play(u.toString(), "", "")
                     return true

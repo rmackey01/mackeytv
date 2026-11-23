@@ -303,9 +303,10 @@ function beginPlay(tape, fromMenu) {
   show.prelaunched = pre;
 }
 function playTrailer(t) {
-  const url = 'https://www.youtube.com/watch?v=' + t.trailer_youtube;
-  try { if (onTV()) { window.MackeyTV.play(url, 'YouTube', t.title + ' trailer'); return; } } catch (e) { /* fall through */ }
-  window.open(url, '_blank');
+  if (!t.trailer_youtube) return;
+  const back = mode === 'cover' ? (TOUCH ? (heldFrom === 'cap' ? 'lane' : heldFrom) : 'held') : mode;
+  startShow(t, false, { trailer: true });
+  show.saved.returnTo = back;
 }
 // coming back from the streaming app
 function resumeFromApp() { if (show && show.stage === 'away') endShow(); }
@@ -409,50 +410,85 @@ fileIn.addEventListener('change', () => {
   testVideo = document.createElement('video'); testVideo.src = URL.createObjectURL(f); testVideo.loop = true; testVideo.playsInline = true;
   mode = pendingMode; startShow(makeTape(f.name.replace(/\.[^.]+$/, '')), true);
 });
-function startShow(tape, fromMenu) {
+// the screening room: walk in, take a seat, the projector rolls a countdown, then the trailer plays on the
+// big screen (YouTube allows that) or the movie's own app takes over (streaming services only play in their apps)
+const SEAT = { x: -0.75, z: TH.z1 + 3.4 + 3 * 1.15 + 0.12, rise: 0.6 };
+const T_SEAT = 3.4, T_COUNT = 3.9, T_TITLE = 6.9, T_ROLL = 8.3;
+function startShow(tape, fromMenu, opts) {
   if (!coverEl.hidden) { coverEl.classList.remove('show'); coverEl.hidden = true; }
   mode = 'show';
-  show = { t: 0, tape, saved: { x: state.x, z: state.z, yaw: state.yaw, pitch: state.pitch, fromMenu: !!fromMenu }, stage: '', ended: false };
+  show = { t: 0, tape, trailer: !!(opts && opts.trailer), saved: { x: state.x, z: state.z, yaw: state.yaw, pitch: state.pitch, fromMenu: !!fromMenu }, stage: '', ended: false };
   card.hidden = true; if (hl) hl.visible = false;
   fadeEl.classList.add('on');
-  setTimeout(() => {
-    screenOff(); BEAM.material.opacity = 0;
-    Object.assign(state, { x: BOOTH.x, z: BOOTH.z, yaw: 0, pitch: Math.atan2(SCREEN.y - BOOTH.y, BOOTH.z - SCREEN.z) - 0.04 });
-    Object.assign(target, { x: state.x, z: state.z, yaw: state.yaw, pitch: state.pitch });
-    dirty = true; fadeEl.classList.remove('on');
-  }, 350);
+  setTimeout(() => { screenOff(); BEAM.material.opacity = 0; placeInTheater(0); dirty = true; fadeEl.classList.remove('on'); }, 350);
+}
+// camera position for any moment of the walk-in, so skipping ahead just works
+function placeInTheater(t) {
+  const start = { x: 0, z: TH.z0 - 2.9, y: 1.62 }, aisleEnd = { x: 0, z: SEAT.z, y: SEAT.rise + 1.62 }, seated = { x: SEAT.x, z: SEAT.z, y: SEAT.rise + 1.12 };
+  let x, z, y, bob = 0;
+  if (t < 2.4) { const e = ease(Math.min(1, t / 2.4)); x = 0; z = start.z + (aisleEnd.z - start.z) * e; y = start.y + (aisleEnd.y - start.y) * e; bob = Math.sin(t * 9) * 0.025 * (1 - e); }
+  else if (t < T_SEAT) { const e = ease((t - 2.4) / (T_SEAT - 2.4)); x = aisleEnd.x + (seated.x - aisleEnd.x) * e; z = SEAT.z; y = aisleEnd.y + (seated.y - aisleEnd.y) * Math.max(0, (e - 0.35) / 0.65); }
+  else { x = seated.x; z = seated.z; y = seated.y; }
+  state.x = x; state.z = z; show.camY = y + bob;
+  state.yaw = t > 2.4 && t < T_SEAT ? Math.sin(((t - 2.4) / (T_SEAT - 2.4)) * Math.PI) * 0.35 : 0;   // a glance down the row while sitting
+  state.pitch = Math.atan2(SCREEN.y - show.camY, z - SCREEN.z) * (t < 2.4 ? 0.5 : 1);
+  Object.assign(target, { x: state.x, z: state.z, yaw: state.yaw, pitch: state.pitch });
 }
 function stepShow(dt) {
   show.t += dt;
   const t = show.t - 0.35;
   if (t < 0 || show.ended) return;
-  const spin = t < 0.8 ? 0 : Math.min(1, (t - 0.8) / 0.6);
+  if (show.stage !== 'trailer' && show.stage !== 'away') placeInTheater(t);
+  const spin = t < T_SEAT ? 0 : Math.min(1, (t - T_SEAT) / 0.6);
   REELS.forEach((r, i) => { r.rotation.x -= dt * 7 * spin * (i ? 0.8 : 1); });
-  if (t >= 0.8 && t < 1.3) BEAM.material.opacity = 0.1 * ((t - 0.8) / 0.5) * (0.7 + Math.random() * 0.3);
-  else if (t >= 1.3) BEAM.material.opacity = 0.085 + Math.random() * 0.02;
-  if (t >= 1.2 && t < 4.2) { const k = (t - 1.2); screenLeader(3 - Math.floor(k), k % 1); show.stage = 'leader'; }
-  else if (t >= 4.2 && t < 5.6) { if (show.stage !== 'title') { screenTitle(show.tape); show.stage = 'title'; } }
-  else if (t >= 5.6 && !show.tape.demo) {
+  if (t >= T_SEAT && t < T_SEAT + 0.5) BEAM.material.opacity = 0.03 * ((t - T_SEAT) / 0.5) * (0.7 + Math.random() * 0.3);
+  else if (t >= T_SEAT + 0.5) BEAM.material.opacity = (show.stage === 'trailer' ? 0.018 : 0.03) + Math.random() * 0.008;   // seen from a seat, the beam is a soft haze overhead
+  if (t >= T_COUNT && t < T_TITLE) { const k = t - T_COUNT; screenLeader(3 - Math.floor(k), k % 1); show.stage = 'leader'; }
+  else if (t >= T_TITLE && t < T_ROLL) { if (show.stage !== 'title') { screenTitle(show.tape); show.stage = 'title'; } }
+  else if (t >= T_ROLL && show.trailer) {
+    if (show.stage !== 'trailer') { show.stage = 'trailer'; openTrailer(show.tape); }
+    placeTrailer();
+  }
+  else if (t >= T_ROLL && !show.tape.demo) {
     if (show.stage !== 'away' && show.stage !== 'failed') {
       if (launchTitle(show.tape)) { show.stage = 'away'; show.awayAt = performance.now(); }
       else { show.stage = 'failed'; finishShow(`Couldn't open ${show.tape.source ? show.tape.source.service : 'the app'}. Check that it's installed and signed in.`); }
     }
   }
-  else if (t >= 5.6) {
+  else if (t >= T_ROLL) {
     if (show.stage !== 'reel') { show.stage = 'reel'; if (testVideo) { testVideo.currentTime = 0; testVideo.play().catch(() => {}); } }
-    drawReel(t - 5.6);
-  }
-  if (t >= 5.2) {
-    // glide down from the booth until the screen fills the view
-    const k = Math.min(1, (t - 5.2) / 2.6), e = ease(k);
-    const endZ = SCREEN.z + 3.1, endY = SCREEN.y;
-    state.x = BOOTH.x * (1 - e); state.z = BOOTH.z + (endZ - BOOTH.z) * e;
-    show.camY = BOOTH.y + (endY - BOOTH.y) * e;
-    state.pitch = Math.atan2(SCREEN.y - show.camY, state.z - SCREEN.z) * (1 - e);
-    camera.fov = baseFov() * (1 - 0.226 * e); camera.updateProjectionMatrix();
-    BEAM.material.opacity *= 1 - e * 0.85;   // the beam fades as you sink into the picture
+    drawReel(t - T_ROLL);
   }
 }
+// ---- trailers on the big screen: a YouTube player laid exactly over the theater screen ----
+const ytEl = document.getElementById('yt');
+let ytFrame = null, ytPaused = false;
+function openTrailer(t) {
+  screenOff(); sctx.fillStyle = '#000'; sctx.fillRect(0, 0, 1024, 430); screenTex.needsUpdate = true;
+  const origin = encodeURIComponent(location.origin && location.origin !== 'null' ? location.origin : 'https://mackeytv.vercel.app');
+  ytEl.innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(t.trailer_youtube)}?autoplay=1&controls=0&modestbranding=1&rel=0&iv_load_policy=3&playsinline=1&enablejsapi=1&origin=${origin}" allow="autoplay; encrypted-media" frameborder="0" title="Trailer"></iframe>`;
+  ytFrame = ytEl.querySelector('iframe'); ytPaused = false;
+  ytFrame.addEventListener('load', () => ytSend('addEventListener', ['onStateChange']));
+  ytEl.hidden = false; placeTrailer();
+}
+function placeTrailer() {
+  if (!ytFrame) return;
+  const pts = [[-1, 1], [1, -1]].map(([sx, sy]) => new THREE.Vector3(sx * SCREEN.w / 2, SCREEN.y + sy * SCREEN.h / 2, SCREEN.z).project(camera));
+  const W = window.innerWidth, H = window.innerHeight;
+  const l = (pts[0].x + 1) / 2 * W, tp = (1 - pts[0].y) / 2 * H, r = (pts[1].x + 1) / 2 * W, b = (1 - pts[1].y) / 2 * H;
+  Object.assign(ytEl.style, { left: l + 'px', top: tp + 'px', width: (r - l) + 'px', height: (b - tp) + 'px' });
+}
+function ytSend(func, args) { try { ytFrame && ytFrame.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: args || [] }), '*'); } catch (e) { /* not ready */ } }
+function closeTrailer() { if (!ytFrame) return; ytEl.innerHTML = ''; ytEl.hidden = true; ytFrame = null; }
+addEventListener('message', (e) => {
+  if (!ytFrame || !/youtube/.test(e.origin)) return;
+  let d = e.data; try { if (typeof d === 'string') d = JSON.parse(d); } catch (err) { return; }
+  if (d && (d.event === 'onStateChange' || (d.event === 'infoDelivery' && d.info && d.info.playerState !== undefined))) {
+    const st = d.event === 'onStateChange' ? d.info : d.info.playerState;
+    if (st === 0 && show && show.stage === 'trailer') endShow();           // trailer finished: back to the store
+  }
+});
+function toggleTrailer() { ytPaused = !ytPaused; ytSend(ytPaused ? 'pauseVideo' : 'playVideo'); }
 function finishShow(msg) {
   if (show.ended) return;
   show.ended = true; if (testVideo) testVideo.pause();
@@ -463,7 +499,7 @@ function finishShow(msg) {
 }
 function endShow() {
   if (!show) return;
-  const sv = show.saved; show = null; if (testVideo) testVideo.pause();
+  const sv = show.saved; show = null; if (testVideo) testVideo.pause(); closeTrailer();
   fadeEl.classList.add('on'); endEl.classList.remove('show'); endEl.hidden = true;
   setTimeout(() => {
     BEAM.material.opacity = 0; screenOff();
@@ -921,7 +957,8 @@ function press(key) {
   if (mode === 'show') {
     if (!show) return;
     if (key === 'Escape' || (key === 'Enter' && show.ended)) endShow();
-    else if (key === 'Enter' && show.t < 5.9) show.t = 5.9;                       // skip the countdown
+    else if (key === 'Enter' && show.stage === 'trailer') toggleTrailer();
+    else if (key === 'Enter' && show.t < T_COUNT + 0.35) show.t = T_COUNT + 0.35;   // skip the walk to the seat
     else if (key === 'Enter' && testVideo) { if (testVideo.paused) testVideo.play().catch(() => {}); else testVideo.pause(); }
     return;
   }
