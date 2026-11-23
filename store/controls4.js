@@ -1172,6 +1172,21 @@ addEventListener('resize', () => { if (mode !== 'show') camera.fov = baseFov(); 
 // entrance: you start a step back from the aisle signs, then settle onto the lane
 setTarget({ x: STOPS[START].x, z: LANE_Z, yaw: 0, pitch: -0.06 });
 window.__press = (k) => press(k);
+// stay current: the TV app keeps one page open for days, so check for a newer store and reload while nobody's mid-choice
+{
+  let newer = false;
+  const idle = () => ['lane', 'aisle'].includes(mode) && document.visibilityState === 'visible';
+  const check = () => {
+    if (!/^https?:/.test(location.protocol) || !window.MTV_VERSION || window.MTV_VERSION.includes('VERSION')) return;
+    fetch('/version.txt?' + Date.now(), { cache: 'no-store' }).then((r) => (r.ok ? r.text() : '')).then((v) => {
+      v = v.trim(); if (v && v !== window.MTV_VERSION) newer = true;
+      if (newer && idle()) location.reload();
+    }).catch(() => {});
+  };
+  setInterval(check, 5 * 60 * 1000);
+  setInterval(() => { if (newer && idle()) location.reload(); }, 20 * 1000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') check(); });
+}
 // on-screen arrows for phones: same as the remote's D-pad, hold to repeat
 {
   const dp = document.getElementById('dpad');

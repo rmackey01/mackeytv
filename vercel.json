@@ -41,6 +41,15 @@
           "value": "application/manifest+json"
         }
       ]
+    },
+    {
+      "source": "/version.txt",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
     }
   ]
 }

@@ -13,7 +13,8 @@ npx esbuild .main.js --bundle --minify --format=esm --target=chrome90 --outfile=
 mkdir -p ../web
 node -e "
 const fs=require('fs');
-const t=fs.readFileSync('template_tv3.html','utf8').replace('<script>/*BUNDLE*/</script>','<script type=\"module\">/*BUNDLE*/</script>');
+const V=String(Date.now());fs.mkdirSync('../web',{recursive:true});fs.writeFileSync('../web/version.txt',V);
+const t=fs.readFileSync('template_tv3.html','utf8').replace('/*VERSION*/',V).replace('<script>/*BUNDLE*/</script>','<script type=\"module\">/*BUNDLE*/</script>');
 const b=fs.readFileSync('.bundle.js','utf8').split('</script').join('<\\\\/script');
 fs.writeFileSync('../web/index.html', t.replace('/*BUNDLE*/', () => b));
 "
