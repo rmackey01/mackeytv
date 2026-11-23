@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MackeyTV Video — 3D store (TV mode)</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<style>
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: #07080c; overflow: hidden; color: #f4ead5; font-family: 'Barlow Condensed', system-ui, sans-serif; }
+  #app { position: fixed; inset: 0; }
+  #app canvas { display: block; cursor: grab; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-size: 28px; color: #c8553d; }
+  .crosshair { position: fixed; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: rgba(244,234,213,0.7); box-shadow: 0 0 0 2px rgba(0,0,0,0.4); pointer-events: none; }
+  #hint { position: fixed; left: 24px; bottom: 22px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; pointer-events: none; }
+  #hint span { background: rgba(10,11,16,0.78); border: 1px solid #3a3f52; border-radius: 10px; padding: 8px 12px; font-size: 18px; font-weight: 600; }
+  #hint kbd { font-family: inherit; background: #f4ead5; color: #12141c; border-radius: 4px; padding: 0 6px; margin-right: 6px; }
+  #hint .msg:empty { display: none; }
+  #hint.warn .msg { border-color: #c8553d; color: #ffd9d2; }
+  #card { position: fixed; right: 24px; bottom: 96px; width: 320px; background: #f4ead5; color: #12141c; border-radius: 14px; padding: 16px 18px; box-shadow: 0 16px 40px rgba(0,0,0,0.5); }
+  #card .k { font-size: 14px; font-weight: 700; letter-spacing: 1.5px; color: #5a5446; }
+  #card .t { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-size: 24px; line-height: 1.1; margin: 4px 0; }
+  #card .m { font-size: 18px; font-weight: 600; }
+  #card .a { font-size: 16px; margin-top: 8px; color: #5a5446; }
+  #brand { position: fixed; left: 24px; top: 18px; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 1.5px; font-size: 22px; color: #f4ead5; text-shadow: 0 1px 6px rgba(0,0,0,0.6); pointer-events: none; }
+  #brand small { font-family: 'Barlow Condensed', sans-serif; font-size: 15px; color: #a69d8a; text-shadow: none; display: block; letter-spacing: 1px; }
+  #fps { position: fixed; right: 24px; top: 18px; background: rgba(10,11,16,0.78); border: 1px solid #3a3f52; border-radius: 10px; padding: 6px 12px; font-size: 18px; font-weight: 600; color: #7dff9a; pointer-events: none; }
+
+  #menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: flex-start; padding-left: 6vw; background: linear-gradient(90deg, rgba(7,8,12,0.92), rgba(7,8,12,0.55) 45%, rgba(7,8,12,0)); opacity: 0; transition: opacity 160ms ease; }
+  #menu.show { opacity: 1; }
+  #menu .panel { display: flex; flex-direction: column; gap: 10px; min-width: 360px; }
+  #menu h2 { margin: 0 0 10px; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-weight: 400; font-size: 30px; color: #c8553d; text-shadow: 0 0 14px rgba(200,85,61,0.6); }
+  #menu .mi { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 14px 20px; border-radius: 12px; border: 2px solid #3a3f52; background: rgba(28,31,43,0.92); color: #f4ead5; font-family: 'Barlow Condensed', sans-serif; cursor: pointer; transition: transform 120ms ease, border-color 120ms ease; }
+  #menu .mi span { font-size: 30px; font-weight: 700; }
+  #menu .mi small { font-size: 18px; color: #a69d8a; font-weight: 600; }
+  #menu .mi.on { border-color: #c8553d; background: #2a1a1a; transform: translateX(8px); box-shadow: 0 0 24px rgba(200,85,61,0.35); }
+  #term { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2.2vh; background: radial-gradient(ellipse at 50% 40%, #1a1d29, #07080c 75%); opacity: 0; transition: opacity 220ms ease; }
+  #term.show { opacity: 1; }
+  #term .bezel { width: min(78vw, 1240px); height: 56vh; box-sizing: border-box; padding: 2.6vh 2.6vw 3.2vh; border-radius: 28px; background: #d8ceb6; box-shadow: inset 0 -10px 0 #b9ad92, 0 24px 48px rgba(0,0,0,0.6); }
+  #term .screen { position: relative; height: 100%; box-sizing: border-box; border-radius: 22px / 26px; background: #0d1208; box-shadow: inset 0 0 70px rgba(0,0,0,0.95); padding: 2.2vh 2.4vw; font-family: VT323, monospace; color: #ffb000; text-shadow: 0 0 7px rgba(255,176,0,0.5); font-size: clamp(16px, 2.6vh, 34px); line-height: 1.18; display: flex; flex-direction: column; overflow: hidden; }
+  #term .screen::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.22) 0 2px, transparent 2px 4px); pointer-events: none; border-radius: inherit; }
+  #term .hdr { display: flex; justify-content: space-between; opacity: 0.9; }
+  #term .rule { opacity: 0.6; overflow: hidden; white-space: nowrap; }
+  #term .q { font-size: 1.25em; margin: 0.25em 0 0.35em; }
+  #term .blink { animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  #term .cols, #term .tr { display: grid; grid-template-columns: 52% 12% 36%; }
+  #term .cols { opacity: 0.65; }
+  #term .tr { width: 100%; box-sizing: border-box; font: inherit; color: inherit; text-shadow: inherit; background: none; border: 0; text-align: left; padding: 0 0.3em; cursor: pointer; }
+  #term .tr span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #term .tr.on { background: #ffb000; color: #0d1208; text-shadow: none; }
+  #term .none { opacity: 0.8; margin-top: 0.4em; }
+  #tres { flex: 1; min-height: 0; overflow: hidden; }
+  #term .rep { display: flex; flex-direction: column; gap: 0.18em; font-size: 0.86em; }
+  #term .rep .flags, #term .rep .ov { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  #term .rep .ov { opacity: 0.75; }
+  #term .rep .g-pass { color: #9dff7a; text-shadow: 0 0 7px rgba(157,255,122,0.45); }
+  #term .rep .g-check, #term .rep .g-unrated { color: #ff7a52; text-shadow: 0 0 7px rgba(255,122,82,0.45); }
+  #term .rep .msg { color: #fff1c9; }
+  #term .opts { display: flex; gap: 0.8em; margin-top: 0.3em; flex-wrap: wrap; }
+  #term .op { font: inherit; color: inherit; text-shadow: inherit; background: none; border: 2px solid currentColor; padding: 0 0.5em; cursor: pointer; }
+  #term .op.on { background: #ffb000; color: #0d1208; text-shadow: none; border-color: #ffb000; }
+  #kbd { width: min(84vw, 1320px); box-sizing: border-box; padding: 1.8vh 1.6vw 2vh; border-radius: 18px; background: #d8ceb6; box-shadow: inset 0 -8px 0 #b9ad92, 0 18px 36px rgba(0,0,0,0.55); display: flex; flex-direction: column; gap: 1vh; align-items: center; }
+  .krow { display: flex; gap: 0.7vw; }
+  .key { height: 5.2vh; min-width: 5.4vw; padding: 0 0.6vw; border-radius: 8px; border: 0; background: #efe7d3; color: #2b2619; font-family: 'Barlow Condensed', sans-serif; font-size: clamp(14px, 2.4vh, 28px); font-weight: 700; box-shadow: 0 6px 0 #a89c80, 0 7px 10px rgba(0,0,0,0.35); cursor: pointer; transition: transform 60ms ease, box-shadow 60ms ease; }
+  .key.wide { background: #8a7f66; color: #f4ead5; box-shadow: 0 6px 0 #5e5644, 0 7px 10px rgba(0,0,0,0.35); min-width: 8vw; }
+  .key.space { min-width: 30vw; background: #efe7d3; color: #2b2619; box-shadow: 0 6px 0 #a89c80, 0 7px 10px rgba(0,0,0,0.35); }
+  .key.focus { outline: 4px solid #c8553d; outline-offset: 3px; }
+  .key.down { transform: translateY(5px); box-shadow: 0 1px 0 #a89c80; }
+
+  #stops { position: fixed; left: 50%; bottom: 22px; transform: translate(-50%, 16px); display: flex; gap: 6px; padding: 6px; border-radius: 14px; background: rgba(10,11,16,0.82); border: 1px solid #2d3142; opacity: 0; pointer-events: none; transition: opacity 180ms ease, transform 180ms ease; }
+  #stops.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+  #stops .st { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 10px; border: 0; background: transparent; color: #a69d8a; font-family: 'Barlow Condensed', sans-serif; font-size: 20px; font-weight: 700; cursor: pointer; white-space: nowrap; transition: background 120ms ease, color 120ms ease; }
+  #stops .st em { font-style: normal; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-size: 13px; color: #12141c; background: #4a4f63; border-radius: 4px; padding: 1px 5px; }
+  #stops .st.on { background: #c8553d; color: #12141c; }
+  #stops .capdot { align-self: center; width: 6px; height: 6px; border-radius: 50%; background: #5a5f73; margin: 0 2px; }
+  #stops .capdot.on { background: #c8553d; box-shadow: 0 0 8px rgba(200,85,61,0.8); }
+  #stops .st.on em { background: #12141c; color: #c8553d; }
+  #cover { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(7,8,12,0.96); opacity: 0; transition: opacity 200ms ease; z-index: 5; }
+  #cover.show { opacity: 1; }
+  #cover .box { display: flex; gap: 4vw; align-items: center; max-width: 1200px; padding: 0 4vw; }
+  #cover img { height: min(62vh, 620px); aspect-ratio: 320 / 576; border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.7); transform: rotate(-2deg); }
+  #cover .info { display: flex; flex-direction: column; gap: 14px; min-width: 0; max-width: 560px; }
+  #cover .cwhere { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-size: 15px; color: #3ec6c1; letter-spacing: 1px; }
+  #cover .ctitle { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-weight: 400; font-size: clamp(30px, 5vh, 56px); line-height: 1.05; color: #f4ead5; }
+  #cover .sum { margin: 0; font-size: 22px; color: #c9bfa8; }
+  #cover .report { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  #cover .report div { background: #f4ead5; color: #12141c; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+  #cover .report span { font-size: 14px; font-weight: 700; letter-spacing: 1px; color: #5a5446; text-transform: uppercase; }
+  #cover .report b { font-size: 22px; }
+  #cover .btns { display: flex; gap: 12px; margin-top: 6px; }
+  #cover .cb { height: 60px; padding: 0 28px; border-radius: 12px; border: 2px solid #3a3f52; background: #1c1f2b; color: #f4ead5; font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 700; cursor: pointer; }
+  #cover .cb.on { border-color: #c8553d; background: #c8553d; color: #12141c; box-shadow: 0 0 24px rgba(200,85,61,0.4); }
+  #cover .cnote { min-height: 24px; font-size: 19px; color: #a69d8a; }
+  #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 300ms ease; z-index: 8; }
+  #fade.on { opacity: 1; }
+  #endcard { position: fixed; inset: 0; z-index: 9; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #f4ead5; opacity: 0; transition: opacity 300ms ease 200ms; }
+  #endcard.show { opacity: 1; }
+  #endcard .ek { font-size: 18px; font-weight: 700; letter-spacing: 3px; color: #a69d8a; }
+  #endcard .et { font-family: Georgia, serif; font-weight: 700; font-size: clamp(34px, 6vh, 64px); }
+  #endcard .es { font-size: 20px; color: #a69d8a; }
+  #marquee { position: fixed; inset: 0; z-index: 6; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at 50% 50%, rgba(7,8,12,0.35), rgba(7,8,12,0.8)); opacity: 0; transition: opacity 250ms ease; }
+  #marquee.show { opacity: 1; }
+  #marquee .board { position: relative; width: min(980px, 86vw); padding: 34px 44px 30px; border-radius: 10px; background: #0e0e10; border: 10px solid #c9a24a; outline: 7px dotted #fff1c2; outline-offset: -4px; box-shadow: 0 0 0 4px #3a2a10, 0 0 40px rgba(255,214,120,0.35), 0 30px 80px rgba(0,0,0,0.8); }
+  #marquee .mhead { text-align: center; font-family: Georgia, serif; font-weight: 700; font-size: clamp(34px, 5.4vh, 58px); letter-spacing: 6px; color: #ff5a43; text-shadow: 0 0 18px rgba(255,90,67,0.55); }
+  #marquee .mnight { text-align: center; font-size: 20px; font-weight: 700; letter-spacing: 4px; color: #c9a24a; margin: 4px 0 18px; }
+  #marquee .mlist { display: flex; flex-direction: column; gap: 8px; }
+  #marquee .mrow { display: grid; grid-template-columns: 90px 1fr 56px; align-items: center; gap: 16px; padding: 10px 16px; border: 2px solid transparent; border-radius: 6px; background: #f3efe3; color: #111; font-family: 'Barlow Condensed', sans-serif; text-align: left; cursor: pointer; }
+  #marquee .mtime { font-size: 22px; font-weight: 700; color: #7a1f24; }
+  #marquee .mtitle { font-size: clamp(22px, 3.4vh, 34px); font-weight: 700; letter-spacing: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #marquee .mrate { justify-self: end; font-size: 18px; font-weight: 700; border: 2px solid #111; border-radius: 4px; padding: 0 6px; }
+  #marquee .mrow.on { border-color: #ff5a43; box-shadow: 0 0 0 3px rgba(255,90,67,0.45), 0 0 24px rgba(255,90,67,0.35); transform: scale(1.02); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="loading">Stocking the shelves…</div>
+<div id="brand">MackeyTV <small>TV MODE · SAMPLE TITLES</small></div>
+<div id="fps" aria-live="off">—</div>
+<div id="card" hidden>
+  <div class="k">YOU PICKED UP</div>
+  <div class="t"></div>
+  <div class="m"></div>
+</div>
+<div id="marquee" hidden><div class="board"><div class="mhead">NOW PLAYING</div><div class="mnight"></div><div class="mlist"></div></div></div>
+<div id="fade"></div>
+<div id="endcard" hidden><div class="ek"></div><div class="et"></div><div class="es"></div></div>
+<div id="stops" aria-label="Store directory"></div>
+<div id="cover" hidden>
+  <div class="box">
+    <img alt="">
+    <div class="info">
+      <div class="cwhere"></div>
+      <h2 class="ctitle"></h2>
+      <p class="sum"></p>
+      <div class="report"></div>
+      <div class="btns"></div>
+      <div class="cnote"></div>
+    </div>
+  </div>
+</div>
+<div id="menu" hidden>
+  <div class="panel" role="menu">
+    <div class="items"></div>
+  </div>
+</div>
+<div id="term" hidden>
+  <div class="bezel"><div class="screen">
+    <div class="hdr"><span id="thdr">MACKEYTV VIDEO · INVENTORY SYSTEM v1.0</span><span id="tcount"></span></div>
+    <div class="rule">────────────────────────────────────────────────────────────────────────────────</div>
+    <div class="q"><span id="tql">SEARCH &gt; </span><span id="tq"></span><span class="blink">_</span></div>
+    <div class="cols" id="tcols"><span>TITLE</span><span>RATED</span><span>LOCATION</span></div>
+    <div id="tres"></div>
+  </div></div>
+  <div id="kbd"></div>
+</div>
+<script>/*BUNDLE*/</script>
+</body>
+</html>

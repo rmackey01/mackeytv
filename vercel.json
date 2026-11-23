@@ -1,0 +1,12 @@
+{
+  "buildCommand": "sh store/build.sh",
+  "outputDirectory": "web",
+  "installCommand": "cd store && npm ci --no-audit --no-fund",
+  "framework": null,
+  "redirects": [
+    { "source": "/apk", "destination": "https://github.com/rmackey01/mackeytv/releases/latest/download/mackeytv.apk", "permanent": false }
+  ],
+  "headers": [
+    { "source": "/", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+  ]
+}

@@ -1,0 +1,56 @@
+name: Build MackeyTV app
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build the store page
+        run: sh store/build.sh
+
+      - name: Put an offline copy of the store inside the app
+        run: |
+          mkdir -p android/app/src/main/assets
+          cp web/index.html android/app/src/main/assets/store.html
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.14.3"
+
+      - name: Build the APK
+        working-directory: android
+        run: gradle assembleRelease --no-daemon
+
+      - name: Name it
+        run: cp android/app/build/outputs/apk/release/app-release.apk mackeytv.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mackeytv-apk
+          path: mackeytv.apk
+
+      # Always the same download link: .../releases/latest/download/mackeytv.apk
+      - name: Publish as the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete app --yes --cleanup-tag || true
+          gh release create app mackeytv.apk --title "MackeyTV build ${{ github.run_number }}" --notes "Install with Downloader. Build ${{ github.run_number }} from ${GITHUB_SHA::7}." --latest
