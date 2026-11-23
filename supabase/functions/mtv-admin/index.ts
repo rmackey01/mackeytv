@@ -166,9 +166,9 @@ async function syncCatalog(force: boolean) {
     const jobs: { genre: string; cert: string; params: Record<string, string> }[] = [];
     for (const [genre, extra] of AISLES) {
       if ((genre === "FAITH" && !faith.length) || (genre === "SPORTS & TRUE STORIES" && !sports.length)) continue;
-      for (const cert of CERTS) for (const page of ["1", "2", "3"]) jobs.push({ genre, cert, params: { ...base, ...extra, certification: cert, page } });
+      for (const cert of CERTS) for (const page of ["1", "2", "3", "4", "5", "6"]) jobs.push({ genre, cert, params: { ...base, ...extra, certification: cert, page } });
     }
-    const pages = await pool(jobs, 8, (j) => tmdb("/discover/movie", j.params).then((r) => ({ j, r })).catch(() => ({ j, r: { results: [] } })));
+    const pages = await pool(jobs, 12, (j) => tmdb("/discover/movie", j.params).then((r) => ({ j, r })).catch(() => ({ j, r: { results: [] } })));
     const found = new Map<number, { m: any; genre: string; cert: string }>();
     for (const [genre] of AISLES) for (const { j, r } of pages) if (j.genre === genre) for (const m of r.results ?? []) if (!found.has(m.id)) found.set(m.id, { m, genre, cert: j.cert });
 
@@ -180,9 +180,9 @@ async function syncCatalog(force: boolean) {
     }
     const { data: autoRows } = await db.from("mtv_titles").select("tmdb_id").eq("source", "auto").eq("status", "approved");
     // providers: every title found now, plus auto titles that dropped out of the top pages (did they leave the services?)
-    const check = [...new Set([...ids, ...(autoRows ?? []).map((r: any) => r.tmdb_id)])].slice(0, 1100);
+    const check = [...new Set([...ids, ...(autoRows ?? []).map((r: any) => r.tmdb_id)])].slice(0, 2600);
     const provs = new Map<number, any[]>();
-    await pool(check, 20, async (id) => { const wp = await tmdb(`/movie/${id}/watch/providers`).catch(() => null); if (wp) provs.set(id, usProviders(wp)); });
+    await pool(check, 30, async (id) => { const wp = await tmdb(`/movie/${id}/watch/providers`).catch(() => null); if (wp) provs.set(id, usProviders(wp)); });
 
     const stamp = new Date().toISOString();
     const inserts: any[] = [];

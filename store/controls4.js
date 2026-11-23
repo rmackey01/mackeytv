@@ -1,6 +1,6 @@
 // =================== controls: Chromecast remote + pointer ===================
 // Remote: D-pad → ArrowUp/Down/Left/Right, OK → Enter, Back → Escape (forwarded by the launcher app).
-const TOTAL = SEGS * PER_SEG;
+const totalOf = (a) => SEGS * LAYOUT[a].per;
 const STOPS = [
   { kind: 'nr', label: 'New Releases', x: -HALFW + 1.3, z: 2.55, yaw: Math.PI / 2 },
   ...GENRES.flatMap((g, i) => {
@@ -40,11 +40,19 @@ stopsEl.addEventListener('click', (e) => { const b = e.target.closest('.st'); if
 
 // ---------- lookups ----------
 function tapeAt(a, side, row, g) {
-  const k = Math.floor(g / PER_SEG), j = g % PER_SEG;
+  const L = LAYOUT[a], k = Math.floor(g / L.per), j = g % L.per;
   const pk = planeIndex.get(`${a}:${side}:${row}:${k}`); if (!pk) return null;
-  const i = side < 0 ? j : PER_SEG - 1 - j;
-  return { tape: pk.userData.tapes[i], z: SEG_START - k * SEG_STEP - (j + 0.5) * TAPE_PITCH, y: pk.userData.y, a, side, row, g };
+  const i = side < 0 ? j : L.per - 1 - j;
+  const tape = pk.userData.tapes[i]; if (!tape) return null;
+  return { tape, z: SEG_START - k * SEG_STEP - (j + 0.5) * L.pitch, y: pk.userData.y, a, side, row, g };
 }
+// the nearest filled slot to (row, g) on a side; the end of the alphabet leaves the last shelves bare
+function nearestFilled(a, side, row, g) {
+  for (let d = 0; d < totalOf(a); d++) for (const gg of [g - d, g + d]) if (gg >= 0 && gg < totalOf(a) && tapeAt(a, side, row, gg)) return { row, g: gg };
+  for (let dr = 1; dr < ROWS; dr++) for (const rr of [row - dr, row + dr]) if (rr >= 0 && rr < ROWS) { const h = nearestFilled1(a, side, rr, g); if (h) return h; }
+  return null;
+}
+function nearestFilled1(a, side, row, g) { for (let d = 0; d < totalOf(a); d++) for (const gg of [g - d, g + d]) if (gg >= 0 && gg < totalOf(a) && tapeAt(a, side, row, gg)) return { row, g: gg }; return null; }
 const wallCell = (w, r, c) => walls[w].cells[r][c];
 const wallWorld = (w, lx, ly, lz = 0) => walls[w].grp.localToWorld(new THREE.Vector3(lx, ly, lz));
 
@@ -52,9 +60,11 @@ const wallWorld = (w, lx, ly, lz = 0) => walls[w].grp.localToWorld(new THREE.Vec
 const catalog = new Map();
 for (const [key, pk] of planeIndex) {
   const [a, side, row, k] = key.split(':').map(Number);
+  const per = LAYOUT[a].per;
   pk.userData.tapes.forEach((tape, i) => {
-    const j = side < 0 ? i : PER_SEG - 1 - i;
-    if (!catalog.has(tape.title)) catalog.set(tape.title, { tape, title: tape.title, rating: tape.rating, loc: { type: 'shelf', a, side, row, g: k * PER_SEG + j }, where: GENRES[a].name });
+    if (!tape) return;
+    const j = side < 0 ? i : per - 1 - i;
+    if (!catalog.has(tape.title)) catalog.set(tape.title, { tape, title: tape.title, rating: tape.rating, loc: { type: 'shelf', a, side, row, g: k * per + j }, where: GENRES[a].name });
   });
 }
 walls.forEach((w, wi) => w.cells.forEach((row, r) => row.forEach((cell, c) => {
@@ -71,6 +81,20 @@ function spineMat(tape) { const c = makeCanvas(COL_W * 2, CAN_H * 2); drawSpine(
 const darkMat = new THREE.MeshBasicMaterial({ color: 0x151518 });
 function showSpine(t) {
   clearHighlight();
+  if (LAYOUT[t.a].face) {
+    const mats = [darkMat, darkMat, darkMat, darkMat, darkMat, darkMat];
+    const face = new THREE.MeshBasicMaterial({ map: coverTexture(t.tape) });
+    mats[t.side < 0 ? 0 : 1] = face;
+    // sharper art for the one you're looking at
+    if (t.tape.poster_path && !t.tape._hi) loadImg(TMDB_IMG + 'w185' + t.tape.poster_path, 10000).then((im) => { if (!im) return; t.tape._hi = im; t.tape.img = im; coverCache.delete(t.tape.title); if (hl && hl.material && hl.material.includes && hl.material.includes(face)) { face.map = coverTexture(t.tape); face.needsUpdate = true; dirty = true; } });
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.03, TAPE_H + 0.012, COVER_W + 0.01), mats);
+    const f = aisleX(t.a) + t.side * HALF_A;
+    m.position.set(f + t.side * 0.035 - t.side * 0.06, t.y + TAPE_H / 2 + 0.006, t.z); m.scale.setScalar(1.12);
+    outline(m);
+    const g = glow(0.26, 0.4, new THREE.Color('#c8553d'), 0.7, 0, 0, 0); scene.remove(g);
+    g.position.set(t.side < 0 ? -0.02 : 0.02, 0, 0); g.rotation.set(0, t.side < 0 ? Math.PI / 2 : -Math.PI / 2, 0); m.add(g);
+    scene.add(m); hl = m; dirty = true; return;
+  }
   const mats = [darkMat, darkMat, darkMat, darkMat, darkMat, darkMat];
   mats[t.side < 0 ? 0 : 1] = spineMat(t.tape);
   const m = new THREE.Mesh(new THREE.BoxGeometry(TAPE_D, TAPE_H + 0.004, TAPE_W + 0.003), mats);
@@ -158,9 +182,12 @@ function setTarget(v) { target.x = v.x; target.z = v.z; target.yaw = state.yaw +
 // ---------- shelf mode ----------
 const EMPTY_MSG = 'Add movies at the store computer: MGR, then your PIN';
 function enterShelf(side) {
-  if (!planeIndex.has(`${ai}:${side}:0:0`)) { setCard(aisleLabel(ai), 'Nothing on this aisle yet', EMPTY_MSG); return; }
-  mode = 'shelf'; renderStops(); cur.side = side;
-  cur.g = Math.max(0, Math.min(TOTAL - 1, Math.round((SEG_START - Math.min(Z0 - 0.1, state.z - 0.4)) / TAPE_PITCH)));
+  const L = LAYOUT[ai];
+  const want = Math.max(0, Math.min(totalOf(ai) - 1, Math.round((SEG_START - Math.min(Z0 - 0.1, state.z - 0.4)) / L.pitch)));
+  const at = nearestFilled(ai, side, cur.row, want) || nearestFilled(ai, -side, cur.row, want);
+  if (!at) { setCard(aisleLabel(ai), 'Nothing on this aisle yet', EMPTY_MSG); return; }
+  if (!nearestFilled(ai, side, cur.row, want)) side = -side;           // this side is past the end of the alphabet
+  mode = 'shelf'; renderStops(); cur.side = side; cur.row = at.row; cur.g = at.g;
   focusShelf();
 }
 function focusShelf() {
@@ -169,8 +196,10 @@ function focusShelf() {
   setCard(`${aisleLabel(ai)} · SHELF ${ROWS - cur.row}`, t.tape.title, tapeMeta(t.tape), t.tape);
 }
 function moveShelf(dRight, dUp) {
-  cur.g = Math.max(0, Math.min(TOTAL - 1, cur.g + (cur.side < 0 ? dRight : -dRight)));
-  cur.row = Math.max(0, Math.min(ROWS - 1, cur.row + dUp));
+  const g = Math.max(0, Math.min(totalOf(ai) - 1, cur.g + (cur.side < 0 ? dRight : -dRight)));
+  const row = Math.max(0, Math.min(ROWS - 1, cur.row + dUp));
+  if (dUp) { const h = nearestFilled1(ai, cur.side, row, g); if (!h) return; cur.row = h.row; cur.g = h.g; }
+  else { if (!tapeAt(ai, cur.side, row, g)) return; cur.g = g; }
   focusShelf();
 }
 function leaveShelf() { mode = 'aisle'; setTimeout(renderStops, 0); clearHighlight(); card.hidden = true; setTarget({ x: aisleX(ai), z: state.z, yaw: 0, pitch: -0.06 }); }
@@ -1056,8 +1085,9 @@ function pickAt(ndc, far) {
   if (d.kind === 'poster') return { kind: 'poster', ai: d.ai, k: d.k };
   if (d.kind === 'cap') return { kind: 'cap', gi: d.gi };
   if (d.kind === 'spine') {
-    const i = Math.min(PER_SEG - 1, Math.floor(h.uv.x * PER_SEG));
-    return { kind: 'spine', a: d.ai, side: d.side, row: d.r, g: d.k * PER_SEG + (d.side < 0 ? i : PER_SEG - 1 - i) };
+    const per = LAYOUT[d.ai].per, i = Math.min(per - 1, Math.floor(h.uv.x * per));
+    if (!d.tapes[i]) return null;
+    return { kind: 'spine', a: d.ai, side: d.side, row: d.r, g: d.k * per + (d.side < 0 ? i : per - 1 - i) };
   }
   if (d.kind === 'wall') {
     const w = walls[d.wall], lp = w.grp.worldToLocal(h.point.clone());

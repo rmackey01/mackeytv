@@ -16,7 +16,7 @@ NEW.forEach((t) => { const tt = t.replace(/’/g, "'"); if (!STARTER.some((x) =>
 GENRES.forEach((g) => { g.titles = CAT.filter((t) => t.genre === g.name); g.real = true; });
 {
   const real = CAT.slice().sort((a, b) => (b.year || 0) - (a.year || 0) || String(b.approved_at).localeCompare(String(a.approved_at)));
-  NEW.splice(0, NEW.length, ...real.slice(0, 40));
+  NEW.splice(0, NEW.length, ...real.slice(0, 100));
 }
 
 // ---------- renderer ----------
@@ -171,6 +171,7 @@ function buildPool(titles, count, inOrder) {
     const tapes = [];
     for (let i = 0; i < PER_SEG; i++) {
       const idx = inOrder ? p * PER_SEG + i : p * 11 + i + Math.floor(rand() * 2);
+      if (inOrder && idx >= titles.length) { tapes.push(null); continue; }
       const t = makeTape(titles[idx % titles.length]);
       tapes.push(t); drawSpine(x, i * COL_W, COL_W, CAN_H, t);
       x.fillStyle = 'rgba(0,0,0,0.85)'; x.fillRect(i * COL_W, 0, 2, CAN_H);
@@ -182,7 +183,8 @@ function buildPool(titles, count, inOrder) {
 const pickRoot = new THREE.Group();
 const pickMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
 const planeIndex = new Map();
-function shelfFace(ai, side, pool) {
+function shelfFace(ai, side) {
+  const L = LAYOUT[ai];
   const region = 'a' + ai;
   const f = aisleX(ai) + side * HALF_A;                 // shelf front
   const len = Z0 - Z1, cz = (Z0 + Z1) / 2, ry = side < 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -196,12 +198,17 @@ function shelfFace(ai, side, pool) {
     const y = ROW0 + r * ROW_STEP;
     sBox(UNIT_D - 0.01, 0.022, inner, woodMat, region, f + side * UNIT_D / 2, y - 0.011, cz);
     sBox(0.012, 0.035, inner, woodMat, region, f + side * 0.006, y - 0.004, cz);
-    for (let k = 0; k < SEGS && pool.length; k++) {
+    for (let k = 0; k < SEGS; k++) {
       const zc = SEG_START - SEG_LEN / 2 - k * SEG_STEP;
-      sBox(TAPE_D, TAPE_H, SEG_LEN, tapeBody, region, f + side * (0.012 + TAPE_D / 2), y + TAPE_H / 2, zc);
-      const seg = (side < 0 ? 0 : ROWS * SEGS) + r * SEGS + k;   // every segment on the aisle, in reading order
-      const entry = pool.length > 3 ? pool[seg % pool.length] : pool[(k * 2 + r * 3 + (side > 0 ? 1 : 0)) % pool.length];
-      sPlane(SEG_LEN, TAPE_H, entry.mat, region, f + side * 0.0115, y + TAPE_H / 2, zc, ry, 0, 10, 1);
+      const si = segIndex(side, r, k);
+      const tapes = L.segTapes[si];
+      if (!tapes || !tapes.some(Boolean)) continue;               // past the end of the alphabet: bare shelf
+      if (L.face) faceOut(L, ai, side, r, k, f, y, zc);
+      else {
+        sBox(TAPE_D, TAPE_H, SEG_LEN, tapeBody, region, f + side * (0.012 + TAPE_D / 2), y + TAPE_H / 2, zc);
+        sPlane(SEG_LEN, TAPE_H, L.mats[si], region, f + side * 0.0115, y + TAPE_H / 2, zc, ry, 0, 10, 1);
+      }
+      const entry = { tapes };
       const pk = new THREE.Mesh(new THREE.PlaneGeometry(SEG_LEN, TAPE_H), pickMat);
       pk.position.set(f + side * 0.0115, y + TAPE_H / 2, zc); pk.rotation.y = ry;
       pk.userData = { kind: 'spine', ai, side, r, k, y, tapes: entry.tapes };
@@ -220,8 +227,90 @@ function shelfFace(ai, side, pool) {
   sPlane(len, 0.26, new THREE.MeshBasicMaterial({ map: canvasTexture(c) }), region, f - side * 0.002, 2.2, cz, ry, 0, 1, 1);
 }
 // real aisles: titles in A-Z order across the shelves, repeating like extra copies when there's room
-const pools = GENRES.map((g) => buildPool(g.titles, Math.min(ROWS * SEGS * 2, Math.max(3, Math.ceil(g.titles.length / PER_SEG))), true));
-GENRES.forEach((g, i) => { shelfFace(i, -1, pools[i]); shelfFace(i, 1, pools[i]); });
+// ---------- shelf layout: every movie exactly once, A to Z ----------
+// Reading order: the left side first, top shelf to bottom, entrance to back; then the right side.
+// Small aisles show covers face-out, spaced to fill the aisle; very big ones fall back to spines.
+const SEG_COUNT = ROWS * SEGS * 2;
+function segIndex(side, r, k) { return (side < 0 ? 0 : ROWS * SEGS) + (ROWS - 1 - r) * SEGS + k; }
+const alphaKey = (t) => String(t).replace(/^(the|a|an)\s+/i, '').toLowerCase();
+const COVER_W = 0.127, FO_W = 48, FO_H = 72, FO_COLS = 32;
+const LAYOUT = GENRES.map((g, ai) => {
+  const titles = g.titles.slice().sort((a, b) => alphaKey(a.title).localeCompare(alphaKey(b.title)));
+  const n = titles.length, perFace = Math.ceil(n / SEG_COUNT);
+  const L = { face: n > 0 && perFace <= 14, n, segTapes: [] };
+  L.per = L.face ? Math.max(1, perFace) : PER_SEG;
+  L.pitch = L.face ? SEG_LEN / L.per : TAPE_PITCH;
+  const tapes = titles.map((t) => makeTape(t));
+  for (let si = 0; si < SEG_COUNT; si++) {
+    const side = si < ROWS * SEGS ? -1 : 1;
+    const arr = [];
+    for (let j = 0; j < L.per; j++) arr[side < 0 ? j : L.per - 1 - j] = tapes[si * L.per + j] || null;   // canvas order along the plane
+    L.segTapes.push(arr);
+  }
+  if (L.face) {
+    // one cover atlas per aisle; covers start as painted boxes and swap to real art as it downloads
+    const rows = Math.max(1, Math.ceil(n / FO_COLS));
+    L.atlas = makeCanvas(FO_COLS * FO_W, rows * FO_H);
+    L.actx = L.atlas.getContext('2d');
+    tapes.forEach((t, i) => { t._cell = i; drawCell(L, t); });
+    L.tex = canvasTexture(L.atlas);
+    L.mat = new THREE.MeshBasicMaterial({ map: L.tex, color: 0xe6e1d8 });
+    L.quads = [];
+    L.tapes = tapes;
+  } else {
+    const pool = buildPool(titles, Math.ceil(n / PER_SEG), true);
+    L.mats = []; pool.forEach((p, si) => { L.mats[si] = p.mat; L.segTapes[si] = p.tapes; });
+  }
+  return L;
+});
+function drawCell(L, t, im) {
+  const x = (t._cell % FO_COLS) * FO_W, y = Math.floor(t._cell / FO_COLS) * FO_H;
+  L.actx.save(); L.actx.translate(x, y);
+  if (im) { L.actx.fillStyle = '#111'; L.actx.fillRect(0, 0, FO_W, FO_H); drawFill(L.actx, im, 0, 0, FO_W, FO_H); }
+  else drawCover(L.actx, FO_W, FO_H, t);
+  L.actx.restore();
+}
+function faceOut(L, ai, side, r, k, f, y, zc) {
+  const tapes = L.segTapes[segIndex(side, r, k)];
+  for (let i = 0; i < L.per; i++) {
+    const t = tapes[i]; if (!t) continue;
+    const j = side < 0 ? i : L.per - 1 - i;
+    const z = SEG_START - k * SEG_STEP - (j + 0.5) * L.pitch;
+    L.quads.push({ t, x: f + side * 0.035, y: y + TAPE_H / 2 + 0.004, z, side });
+  }
+}
+GENRES.forEach((g, i) => { shelfFace(i, -1); shelfFace(i, 1); });
+// face-out covers: one merged mesh per aisle, leaning slightly back like a real rack
+LAYOUT.forEach((L) => {
+  if (!L.face || !L.quads.length) return;
+  const geos = L.quads.map((q) => {
+    const g = new THREE.PlaneGeometry(COVER_W, TAPE_H);
+    const u0 = (q.t._cell % FO_COLS) / FO_COLS, v1 = 1 - Math.floor(q.t._cell / FO_COLS) * FO_H / L.atlas.height, v0 = v1 - FO_H / L.atlas.height;
+    const uv = g.attributes.uv; uv.setXY(0, u0, v1); uv.setXY(1, u0 + 1 / FO_COLS, v1); uv.setXY(2, u0, v0); uv.setXY(3, u0 + 1 / FO_COLS, v0);
+    g.applyMatrix4(new THREE.Matrix4().makeRotationX(-0.06));
+    g.applyMatrix4(new THREE.Matrix4().makeRotationY(q.side < 0 ? Math.PI / 2 : -Math.PI / 2));
+    g.translate(q.x, q.y, q.z);
+    return g;
+  });
+  scene.add(new THREE.Mesh(mergeGeometries(geos), L.mat));
+});
+// real cover art, nearest aisle first
+(async () => {
+  const order = [2, 1, 3, 0, 4, 5].filter((a) => LAYOUT[a] && LAYOUT[a].face);
+  let pending = false;
+  const flush = () => { pending = false; LAYOUT.forEach((L) => { if (L.face && L.dirty) { L.tex.needsUpdate = true; L.dirty = false; } }); if (window.__redraw) window.__redraw(); };
+  for (const a of order) {
+    const L = LAYOUT[a], list = L.tapes.filter((t) => t.poster_path);
+    let i = 0;
+    await Promise.all(Array.from({ length: 6 }, async () => {
+      while (i < list.length) {
+        const t = list[i++];
+        const im = await loadImg(TMDB_IMG + 'w92' + t.poster_path, 12000);
+        if (im) { if (!t.img) t.img = im; drawCell(L, t, im); L.dirty = true; if (!pending) { pending = true; setTimeout(flush, 400); } }
+      }
+    }));
+  }
+})();
 
 // ---------- glow + neon (unlit, few draw calls) ----------
 function glowTexture() {

@@ -25,11 +25,17 @@ const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) { /* sto
 async function loadCatalog() {
   const cols = 'tmdb_id,title,year,certification,runtime,overview,genre,poster_path,backdrop_path,trailer_youtube,providers,watch_links,content_flags,approved_at,source,enriched_at';
   try {
-    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 8000);
-    const r = await fetch(`${SB_URL}/rest/v1/mtv_titles?select=${cols}&status=eq.approved&order=title.asc&limit=5000`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, signal: ctl.signal });
+    const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 15000);
+    // the database hands out at most 1000 rows per request, so page through
+    const rows = [];
+    for (let from = 0; from < 20000; from += 1000) {
+      const r = await fetch(`${SB_URL}/rest/v1/mtv_titles?select=${cols}&status=eq.approved&order=tmdb_id.asc&offset=${from}&limit=1000`, { headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}` }, signal: ctl.signal });
+      if (!r.ok) throw new Error('catalog ' + r.status);
+      const page = await r.json();
+      rows.push(...page);
+      if (page.length < 1000) break;
+    }
     clearTimeout(to);
-    if (!r.ok) throw new Error('catalog ' + r.status);
-    const rows = await r.json();
     lsSet('mtv_catalog', JSON.stringify(rows));
     return rows;
   } catch (e) {
@@ -63,7 +69,7 @@ const CAT = (await loadCatalog())
 // cover art only for what's shown face-out (New Releases, endcaps, back-wall posters); spines are painted
 {
   const want = new Set();
-  CAT.slice().sort((a, b) => (b.year || 0) - (a.year || 0) || String(b.approved_at).localeCompare(String(a.approved_at))).slice(0, 40).forEach((t) => want.add(t));
+  CAT.slice().sort((a, b) => (b.year || 0) - (a.year || 0) || String(b.approved_at).localeCompare(String(a.approved_at))).slice(0, 100).forEach((t) => want.add(t));
   const byGenre = {};
   CAT.forEach((t) => { (byGenre[t.genre] = byGenre[t.genre] || []).push(t); });
   Object.values(byGenre).forEach((list) => list.slice(0, 12).forEach((t) => want.add(t)));
