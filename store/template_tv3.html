@@ -87,20 +87,20 @@
   #stops .capdot { align-self: center; width: 6px; height: 6px; border-radius: 50%; background: #5a5f73; margin: 0 2px; }
   #stops .capdot.on { background: #c8553d; box-shadow: 0 0 8px rgba(200,85,61,0.8); }
   #stops .st.on em { background: #12141c; color: #c8553d; }
-  #cover { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(7,8,12,0.96); opacity: 0; transition: opacity 200ms ease; z-index: 5; }
-  #cover.show { opacity: 1; }
-  #cover .box { display: flex; gap: 4vw; align-items: center; max-width: 1200px; padding: 0 4vw; }
-  #cover img { height: min(62vh, 620px); aspect-ratio: 320 / 576; border-radius: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.7); transform: rotate(-2deg); }
-  #cover .info { display: flex; flex-direction: column; gap: 14px; min-width: 0; max-width: 560px; }
+  #cover { position: fixed; left: 0; right: 0; bottom: 0; display: flex; align-items: flex-end; justify-content: center; padding: 10vh 3vw 4vh; background: linear-gradient(rgba(7,8,12,0), rgba(7,8,12,0.9) 22%, rgba(7,8,12,0.97)); opacity: 0; transform: translateY(24px); transition: opacity 200ms ease, transform 200ms ease; z-index: 5; }
+  #cover.show { opacity: 1; transform: none; }
+  #cover .box { display: flex; gap: 2.4vw; align-items: flex-end; width: 100%; max-width: 1500px; }
+  #cover img { height: min(38vh, 380px); aspect-ratio: 2 / 3; object-fit: cover; border-radius: 8px; box-shadow: 0 16px 40px rgba(0,0,0,0.7); flex: none; }
+  #cover .info { display: flex; flex-direction: column; gap: 10px; min-width: 0; flex: 1; max-width: 900px; }
   #cover .cwhere { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-size: 15px; color: #3ec6c1; letter-spacing: 1px; }
   #cover .ctitle { margin: 0; font-family: 'Barlow Condensed', sans-serif; font-weight: 700; letter-spacing: 0.5px; font-weight: 400; font-size: clamp(30px, 5vh, 56px); line-height: 1.05; color: #f4ead5; }
-  #cover .sum { margin: 0; font-size: 22px; color: #c9bfa8; }
-  #cover .report { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  #cover .sum { margin: 0; font-size: clamp(16px, 2.3vh, 22px); color: #c9bfa8; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  #cover .report { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; max-width: 680px; }
   #cover .report div { background: #f4ead5; color: #12141c; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
   #cover .report span { font-size: 14px; font-weight: 700; letter-spacing: 1px; color: #5a5446; text-transform: uppercase; }
-  #cover .report b { font-size: 22px; }
+  #cover .report b { font-size: clamp(16px, 2.2vh, 22px); }
   #cover .btns { display: flex; gap: 12px; margin-top: 6px; }
-  #cover .cb { height: 60px; padding: 0 28px; border-radius: 12px; border: 2px solid #3a3f52; background: #1c1f2b; color: #f4ead5; font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 700; cursor: pointer; }
+  #cover .cb { height: clamp(44px, 6vh, 60px); padding: 0 24px; border-radius: 12px; border: 2px solid #3a3f52; background: #1c1f2b; color: #f4ead5; font-family: 'Barlow Condensed', sans-serif; font-size: 26px; font-weight: 700; cursor: pointer; }
   #cover .cb.on { border-color: #c8553d; background: #c8553d; color: #12141c; box-shadow: 0 0 24px rgba(200,85,61,0.4); }
   #cover .cnote { min-height: 24px; font-size: 19px; color: #a69d8a; }
   #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 300ms ease; z-index: 8; }
@@ -155,10 +155,12 @@
     #stops .st { font-size: 15px; padding: 7px 10px; }
     #card { left: 10px; right: 10px; width: auto; bottom: calc(64px + env(safe-area-inset-bottom)); padding: 10px 14px; }
     #card .t { font-size: 20px; }
-    #cover { align-items: flex-start; overflow-y: auto; }
-    #cover .box { flex-direction: column; gap: 14px; padding: 64px 16px 24px; }
-    #cover img { height: 32vh; }
-    #cover .ctitle { font-size: 28px; }
+    #cover { padding: 8vh 12px calc(12px + env(safe-area-inset-bottom)); max-height: 82vh; overflow-y: auto; }
+    #cover .box { gap: 12px; align-items: flex-start; }
+    #cover img { height: 22vh; max-height: 170px; }
+    #cover .ctitle { font-size: 24px; }
+    #cover .report div { padding: 7px 8px; }
+    #cover .report span { font-size: 11px; }
     #cover .sum { font-size: 16px; }
     #cover .report { gap: 6px; }
     #cover .btns { flex-wrap: wrap; }

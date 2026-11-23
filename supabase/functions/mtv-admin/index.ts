@@ -349,6 +349,16 @@ Deno.serve(async (req) => {
   let body: any;
   try { body = await req.json(); } catch { return json({ error: "Bad request" }, 400); }
   // the TV calls these without the PIN: a daily catalog sync (throttled) and details for one approved title
+  if (body.action === "diag") {
+    // play-link service health check (never returns the key)
+    const key = Deno.env.get("WATCHMODE_KEY") ?? "";
+    const strip = (t: string) => t.split(key).join("***");
+    const r1 = await fetch(`${WATCHMODE}/search/?apiKey=${key}&search_field=tmdb_movie_id&search_value=${Number(body.tmdb_id) || 862}`);
+    const t1 = strip(await r1.text());
+    let t2 = "", s2 = 0;
+    try { const id = JSON.parse(t1)?.title_results?.[0]?.id; if (id) { const r2 = await fetch(`${WATCHMODE}/title/${id}/sources/?apiKey=${key}&regions=US`); s2 = r2.status; t2 = strip(await r2.text()).slice(0, 1500); } } catch { /* shown below */ }
+    return json({ keyLen: key.trim().length, keyHasSpace: /\s/.test(key), search: { status: r1.status, body: t1.slice(0, 600) }, sources: { status: s2, body: t2 } });
+  }
   if (body.action === "sync" || body.action === "enrich") {
     try { return json(body.action === "sync" ? await syncCatalog(false) : await enrich(Number(body.tmdb_id))); }
     catch (e) { return json({ error: e instanceof Error ? e.message : String(e) }, 400); }
