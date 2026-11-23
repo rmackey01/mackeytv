@@ -123,6 +123,15 @@
   #marquee .mrow.on { border-color: #ff5a43; box-shadow: 0 0 0 3px rgba(255,90,67,0.45), 0 0 24px rgba(255,90,67,0.35); transform: scale(1.02); }
   html, body { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
   #touchbar { display: none; }
+  #dpad { display: none; }
+  @media (pointer: coarse) {
+    #dpad { display: grid; position: fixed; z-index: 11; right: calc(10px + env(safe-area-inset-right)); bottom: calc(66px + env(safe-area-inset-bottom)); width: 138px; height: 138px; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: 2px; padding: 4px; border-radius: 50%; background: rgba(10,11,16,0.6); border: 1px solid #2d3142; }
+    #dpad[hidden] { display: none !important; }
+    #dpad button { border: 0; border-radius: 10px; background: rgba(244,234,213,0.12); color: #f4ead5; font-size: 15px; display: flex; align-items: center; justify-content: center; touch-action: none; }
+    #dpad button:active, #dpad button.down { background: #c8553d; }
+    #dpad .u { grid-area: 1 / 2; } #dpad .l { grid-area: 2 / 1; } #dpad .ok { grid-area: 2 / 2; font: 700 15px 'Barlow Condensed', sans-serif; border-radius: 50%; background: rgba(244,234,213,0.22); } #dpad .r { grid-area: 2 / 3; } #dpad .d { grid-area: 3 / 2; }
+    #card { right: 158px !important; }
+  }
   @media (pointer: coarse) {
     #touchbar { display: block; }
     #touchbar button { position: fixed; z-index: 12; top: calc(10px + env(safe-area-inset-top)); width: 46px; height: 46px; border-radius: 50%; border: 1px solid #2d3142; background: rgba(10,11,16,0.78); color: #f4ead5; font-size: 22px; line-height: 1; display: flex; align-items: center; justify-content: center; }
@@ -168,6 +177,7 @@
 <div id="loading">Stocking the shelves…</div>
 <div id="brand">MackeyTV</div>
 <div id="fps" aria-live="off" hidden>—</div>
+<div id="dpad" hidden><button type="button" data-k="ArrowUp" class="u" aria-label="Up">▲</button><button type="button" data-k="ArrowLeft" class="l" aria-label="Left">◀</button><button type="button" data-k="Enter" class="ok" aria-label="Select">OK</button><button type="button" data-k="ArrowRight" class="r" aria-label="Right">▶</button><button type="button" data-k="ArrowDown" class="d" aria-label="Down">▼</button></div>
 <div id="touchbar"><button type="button" class="tback" aria-label="Back">‹</button><button type="button" class="tmenu" aria-label="Menu">☰</button></div>
 <div id="install" hidden><span class="msg"></span><button type="button" class="go" hidden>Install</button><button type="button" class="x" aria-label="Not now">✕</button></div>
 <div id="card" hidden>

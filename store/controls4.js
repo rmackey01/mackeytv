@@ -1101,6 +1101,22 @@ addEventListener('resize', () => { if (mode !== 'show') camera.fov = baseFov(); 
 // entrance: you start a step back from the aisle signs, then settle onto the lane
 setTarget({ x: STOPS[START].x, z: LANE_Z, yaw: 0, pitch: -0.06 });
 window.__press = (k) => press(k);
+// on-screen arrows for phones: same as the remote's D-pad, hold to repeat
+{
+  const dp = document.getElementById('dpad');
+  let rep = null;
+  const stop = () => { clearTimeout(rep); clearInterval(rep); rep = null; dp.querySelectorAll('.down').forEach((b) => b.classList.remove('down')); };
+  dp.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    e.preventDefault(); e.stopPropagation(); stop(); b.classList.add('down');
+    const k = b.dataset.k; press(k); dirty = true;
+    if (k !== 'Enter') rep = setTimeout(() => { rep = setInterval(() => { press(k); dirty = true; }, 110); }, 320);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => dp.addEventListener(ev, stop));
+  // show it wherever the arrows do something; the computer, cover and theater have their own buttons
+  const sync = () => { const on = ['lane', 'aisle', 'shelf', 'wall', 'poster', 'held', 'menu', 'marquee'].includes(mode); if (dp.hidden === on) dp.hidden = !on; requestAnimationFrame(sync); };
+  sync();
+}
 // on-screen Back and Menu for phones and tablets
 {
   const tb = document.getElementById('touchbar');
